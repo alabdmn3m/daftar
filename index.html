@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>دفتر المهام</title>
+<meta name="theme-color" content="#522D8E">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="الدفتر">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<style>
+@font-face{font-family:'Plex';font-weight:400;font-display:swap;src:url(fonts/ibm-plex-sans-arabic-arabic-400-normal.woff2) format('woff2')}
+@font-face{font-family:'Plex';font-weight:600;font-display:swap;src:url(fonts/ibm-plex-sans-arabic-arabic-600-normal.woff2) format('woff2')}
+@font-face{font-family:'Plex';font-weight:700;font-display:swap;src:url(fonts/ibm-plex-sans-arabic-arabic-700-normal.woff2) format('woff2')}
+@font-face{font-family:'Plex';font-weight:400;font-display:swap;unicode-range:U+0000-00FF,U+2000-206F;src:url(fonts/ibm-plex-sans-arabic-latin-400-normal.woff2) format('woff2')}
+@font-face{font-family:'Plex';font-weight:600;font-display:swap;unicode-range:U+0000-00FF,U+2000-206F;src:url(fonts/ibm-plex-sans-arabic-latin-600-normal.woff2) format('woff2')}
+@font-face{font-family:'Plex';font-weight:700;font-display:swap;unicode-range:U+0000-00FF,U+2000-206F;src:url(fonts/ibm-plex-sans-arabic-latin-700-normal.woff2) format('woff2')}
+:root{--bg:#F5F4F8;--card:#fff;--fg:#1D1828;--muted:#6B6478;--line:#E4E0EC;--brand:#522D8E;--gold:#E5B51C;--ok:#15803D;--off:#C2410C;--shadow:0 6px 24px rgba(20,10,45,.10)}
+@media (prefers-color-scheme:dark){:root{--bg:#121017;--card:#1C1924;--fg:#EEEAF5;--muted:#A79FB8;--line:#2E2A3A;--brand:#7650C0;--ok:#4ADE80;--off:#FB923C;--shadow:0 6px 24px rgba(0,0,0,.4)}}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--fg);font-family:'Plex',system-ui,sans-serif;-webkit-text-size-adjust:100%}
+body{padding:calc(env(safe-area-inset-top,0px) + 16px) 16px calc(env(safe-area-inset-bottom,0px) + 24px)}
+main{max-width:560px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
+h1{font-size:22px;margin:4px 0 0}
+.card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:16px;box-shadow:var(--shadow)}
+.muted{color:var(--muted);font-size:13.5px}
+.row{display:flex;gap:8px;align-items:center}
+input{flex:1;min-width:0;font:inherit;font-size:16px;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--bg);color:var(--fg);text-align:right}
+button{font:inherit;font-weight:600;font-size:15px;border:0;border-radius:12px;padding:12px 16px;background:var(--brand);color:#fff;min-height:44px;cursor:pointer}
+button.ghost{background:transparent;color:var(--muted);border:1px solid var(--line)}
+#pill{align-self:flex-start;font-size:13px;padding:6px 12px;border-radius:99px;border:1px solid var(--line);background:var(--card)}
+#pill.ok{color:var(--ok);border-color:currentColor}#pill.off{color:var(--off);border-color:currentColor}
+ul{list-style:none;margin:8px 0 0;padding:0}
+li{display:flex;align-items:center;gap:10px;padding:10px 0;border-top:1px solid var(--line)}
+li:first-child{border-top:0}
+li .t{flex:1}
+li.done .t{text-decoration:line-through;color:var(--muted)}
+li button{min-height:36px;padding:6px 10px;font-size:13px}
+.checks div{padding:4px 0}
+.hide{display:none!important}
+.err{color:var(--off);font-size:13.5px}
+</style>
+</head>
+<body>
+<main>
+  <h1>دفتر المهام</h1>
+  <div id="pill" role="status" aria-live="polite">…</div>
+
+  <section id="login" class="card hide">
+    <p style="margin-top:0">ادخل ببريدك وكلمة مرور الدفتر.</p>
+    <form id="lf" class="col" style="display:flex;flex-direction:column;gap:10px">
+      <input id="em" type="email" autocomplete="username" placeholder="البريد" dir="ltr" required>
+      <input id="pw" type="password" autocomplete="current-password" placeholder="كلمة المرور" dir="ltr" required>
+      <button type="submit">دخول</button>
+      <div id="lerr" class="err"></div>
+      <button type="button" id="forgot" class="ghost">نسيت كلمة المرور</button>
+    </form>
+  </section>
+
+  <section id="setpw" class="card hide">
+    <form id="pf" style="display:flex;flex-direction:column;gap:10px">
+      <p style="margin:0">اختر كلمة مرور للدفتر. ستكتبها مرة واحدة في كل جهاز، ثم يبقى الدفتر مفتوحًا حتى بلا إنترنت.</p>
+      <input id="np" type="password" autocomplete="new-password" placeholder="كلمة المرور (8 أحرف على الأقل)" dir="ltr" required>
+      <input id="np2" type="password" autocomplete="new-password" placeholder="أعدها للتأكيد" dir="ltr" required>
+      <button type="submit">احفظ كلمة المرور</button>
+      <div id="perr" class="err"></div>
+    </form>
+    <div id="pdone" class="hide">
+      <p style="margin-top:0"><strong>✓ حُفظت كلمة المرور.</strong></p>
+      <p class="muted">الآن على الآيفون: من Safari اضغط زر المشاركة ← «إضافة إلى الشاشة الرئيسية»، ثم افتح الدفتر من أيقونته وادخل ببريدك وكلمة المرور.</p>
+      <button type="button" onclick="document.getElementById('setpw').classList.add('hide');document.getElementById('app').classList.remove('hide')">افتح الدفتر هنا</button>
+    </div>
+  </section>
+
+  <section id="app" class="hide" style="display:flex;flex-direction:column;gap:16px">
+    <div class="card">
+      <strong>تجربة المرحلة الأولى</strong>
+      <p class="muted" style="margin:6px 0 12px">أضف ملاحظة، ثم اقطع الإنترنت (وضع الطيران)، وأغلق التطبيق وافتحه، وأضف أو أنجز شيئًا. حين يعود الاتصال يُرسل كل شيء تلقائيًا.</p>
+      <form id="af" class="row">
+        <input id="nt" placeholder="اكتب ملاحظة تجربة" autocomplete="off">
+        <button type="submit">أضف</button>
+      </form>
+      <ul id="list"></ul>
+    </div>
+    <div class="card checks">
+      <strong>فحص الجاهزية</strong>
+      <div id="c-sw">…</div>
+      <div id="c-home">…</div>
+      <div id="c-persist">…</div>
+      <div id="c-sync">…</div>
+    </div>
+    <button id="out" class="ghost">خروج</button>
+  </section>
+</main>
+<script src="config.js"></script>
+<script src="supabase.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
