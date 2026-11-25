@@ -380,8 +380,25 @@
   /* حفظ التطبيق على الجوال ليفتح بلا إنترنت، وطلب حماية بياناته من المسح التلقائي */
   /* يُسجَّل فورًا لا بعد اكتمال التحميل، حتى يُحفظ التطبيق ولو أُغلق سريعًا */
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('sw.js').then(() => navigator.serviceWorker.ready)
-      .then(() => caches.match('index.html')).then(hit => offlineStatus(!!hit)).catch(() => offlineStatus(false));
+    const hadSW = !!navigator.serviceWorker.controller;
+    navigator.serviceWorker.register('sw.js').then(reg => {
+      /* الآيفون يُبقي التطبيق مفتوحًا في الخلفية، فيُسأل عن إصدار جديد كلما عاد للواجهة */
+      document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') reg.update().catch(() => {}); });
+      return navigator.serviceWorker.ready;
+    }).then(() => caches.match('index.html')).then(hit => offlineStatus(!!hit)).catch(() => offlineStatus(false));
+    /* وصل إصدار جديد: تُعاد الصفحة مرة واحدة فيظهر من الفتحة نفسها، لا في الفتحة التالية.
+       لا تُعاد أثناء الكتابة أو والمحرّر مفتوح أو عناصر بانتظار المراجعة؛ تنتظر إلى أن يفرغ أو يُغلق التطبيق. */
+    const busy = () => !!document.querySelector('input:focus, textarea:focus, select:focus, [data-act="e-save"], #review [data-act="p-add"]');
+    let reloading = false;
+    const reloadSoon = () => {
+      if (reloading) return;
+      if (busy()) { setTimeout(reloadSoon, 4000); return; }
+      reloading = true; location.reload();
+    };
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (!hadSW) return; // أول تثبيت: الصفحة جديدة أصلًا
+      if (document.visibilityState === 'hidden') { reloading = true; location.reload(); } else reloadSoon();
+    });
   } else offlineStatus(false);
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
 
