@@ -381,6 +381,11 @@
   /* يُسجَّل فورًا لا بعد اكتمال التحميل، حتى يُحفظ التطبيق ولو أُغلق سريعًا */
   if ('serviceWorker' in navigator) {
     const hadSW = !!navigator.serviceWorker.controller;
+    /* يخبر عامل الخدمة أن هذه الصفحة تعرف كيف تُحدّث نفسها */
+    navigator.serviceWorker.addEventListener('message', ev => {
+      if (ev.data === 'daftar-ping' && ev.source) ev.source.postMessage('daftar-modern');
+    });
+    try { navigator.serviceWorker.startMessages(); } catch (_) {}
     navigator.serviceWorker.register('sw.js').then(reg => {
       /* الآيفون يُبقي التطبيق مفتوحًا في الخلفية، فيُسأل عن إصدار جديد كلما عاد للواجهة */
       document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') reg.update().catch(() => {}); });
