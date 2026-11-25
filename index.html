@@ -499,7 +499,6 @@ body.has-bnav .note{bottom:calc(84px + var(--navgap))!important}
 #netbar.on{opacity:1;transform:none}
 #netbar.off{border-color:#C2410C;color:#C2410C}
 #netbar.ok{border-color:#15803D;color:#15803D}
-#netbar.calm{color:var(--muted)}
 @media (prefers-reduced-motion:reduce){#netbar{transition:none}}
 body.net-on.has-bnav .note{bottom:calc(var(--navgap) + 118px)!important}
 body.kb #netbar{bottom:12px}
@@ -895,7 +894,7 @@ async function understand(){
   S.lastText=text;S.parseErr='';S.slow=false;S.pending=[];ta.blur();S.vacP=null;S.ideaP=null;
   if(!S.ideaNo&&!S.vacNo){const ip=ideaParse(text);if(ip){S.ideaP=ip;S.phase='review';renderReview();return}}S.ideaNo=false;
   if(!S.vacNo){const vp=vacParse(text);if(vp){S.vacP=vp;S.phase='review';renderReview();return}}S.vacNo=false;
-  if(!S.sample){S.pending=localParse(text);tripEnrich(S.lastText);S.phase=S.pending.length?'review':'idle';if(!S.pending.length)note('لم أجد عناصر في النص.',4000);renderReview();return}
+  if(!S.sample||navigator.onLine===false){S.pending=localParse(text);tripEnrich(S.lastText);S.phase=S.pending.length?'review':'idle';if(!S.pending.length)note('لم أجد عناصر في النص.',4000);renderReview();return}
   S.phase='thinking';S.ctl=new AbortController();const ctl=S.ctl;
   clearTimeout(S.slowT);S.slowT=setTimeout(()=>{if(S.ctl===ctl&&S.phase==='thinking'){S.slow=true;renderReview()}},5000);
   renderReview();
@@ -907,6 +906,7 @@ async function understand(){
     tripEnrich(S.lastText);S.phase=S.pending.length?'review':'idle';if(!S.pending.length)note('لم أجد عناصر في النص.',4000);
   }catch(e){
     if(S.ctl!==ctl||(e&&e.code==='cancelled'))return;
+    if(e&&(e.code==='not_configured'||e.code==='offline')){S.ctl=null;clearTimeout(S.slowT);fallbackNow();return}
     S.phase='error';S.parseErr=sampleErr(e);
   }finally{if(S.ctl===ctl){clearTimeout(S.slowT);S.ctl=null}}
   renderReview();
@@ -918,6 +918,8 @@ function fallbackNow(){
 }
 function sampleErr(e){
   const c=e&&e.code;
+  if(c==='offline')return 'لا يوجد إنترنت الآن. رتّبها بدون انتظار أو أعد المحاولة لاحقًا.';
+  if(c==='not_configured')return 'الفهم الذكي لم يُجهَّز في الخادم بعد. رتّبها بدون انتظار.';
   return c==='not_granted'?'لم تسمح للدفتر باستخدام Claude. تقدر ترتّبها بدون انتظار.':
     c==='sampling_disabled'?'Claude غير متاح لحسابك هنا.':
     c==='rate_limited'?'وصلت لحد الاستخدام مؤقتًا. جرّب بعد قليل أو رتّبها بدون انتظار.':
@@ -973,8 +975,8 @@ function extractId(r){
 }
 function calErr(e){
   const c=e&&e.code;
-  return c==='server_not_connected'||c==='server_not_found'?'أضف موصل Google Calendar من إعدادات Claude ثم الموصلات.':
-    c==='needs_reauth'?'أعد ربط Google Calendar من إعدادات Claude ثم الموصلات.':
+  return c==='server_not_connected'||c==='server_not_found'?'اربط تقويم Google من قسم «بياناتك» أسفل الصفحة.':
+    c==='needs_reauth'?'أعد ربط تقويم Google من قسم «بياناتك» أسفل الصفحة.':
     c==='selection_required'?'اختر حساب Google Calendar الذي يستخدمه الدفتر.':
     c==='not_in_manifest'||c==='consent_required'?'لم تسمح للدفتر بالوصول إلى التقويم.':
     c==='approval_required'?'التقويم ينتظر موافقتك. اضغط «أضف للتقويم».':
@@ -1040,7 +1042,7 @@ function draftPrompt(it,det){
 async function genDraft(id){
   const it=get(id);if(!it)return;
   const ta=document.getElementById('do-in-'+id);const det=(ta?ta.value:S.doIn[id]||'').trim();S.doIn[id]=det;
-  if(!S.sample){note('التجهيز بـClaude غير متاح في هذا العرض.',5000);return}
+  if(!S.sample){note('التجهيز يحتاج الإنترنت.',5000);return}
   S.doBusy[id]=true;S.stream[id]='';render();
   try{
     const r=await S.sample(draftPrompt(it,det),{cache:false,onText:({text})=>{S.stream[id]=text;const o=document.getElementById('draft-'+id);if(o){o.textContent=text;o.classList.remove('wait')}}});
@@ -1755,7 +1757,7 @@ function renderMain(){
   }
   h+=`<section class="sec"><h2 class="sec-h">بياناتك</h2>
     ${S.imp?`<div class="confirm" style="background:var(--brand-tint)"><p style="color:var(--fg)">تستورد ${S.imp.length} عنصرًا؟ العناصر الموجودة بالرقم نفسه تُستبدل.</p><div><button class="btn primary small" data-act="imp-yes">استورد</button><button class="btn quiet small" data-act="imp-no">تراجع</button></div></div>`:''}
-    <div class="data-row">${S.dl?`<button class="btn quiet small" data-act="exp-csv">تصدير Excel</button><button class="btn quiet small" data-act="exp-json">نسخة احتياطية</button>`:''}<button class="btn quiet small" data-act="imp">استيراد نسخة</button></div><div class="data-row" style="margin-top:8px"><button class="btn quiet small" data-act="tools" aria-pressed="${!!S.toolsOn}">${S.toolsOn?'أخفِ مؤقت الوقت وأهم 3':'أظهر مؤقت الوقت وأهم 3'}</button></div><p style="margin:10px 0 0;font-size:12px;color:var(--faint)">تحديث الصفحة: 15 نوفمبر، 3:35 م</p></section>`;
+    <div class="data-row">${S.dl?`<button class="btn quiet small" data-act="exp-csv">تصدير Excel</button><button class="btn quiet small" data-act="exp-json">نسخة احتياطية</button>`:''}<button class="btn quiet small" data-act="imp">استيراد نسخة</button></div><div class="data-row" style="margin-top:8px"><button class="btn quiet small" data-act="tools" aria-pressed="${!!S.toolsOn}">${S.toolsOn?'أخفِ مؤقت الوقت وأهم 3':'أظهر مؤقت الوقت وأهم 3'}</button></div>${window.DaftarCalHTML?window.DaftarCalHTML():''}<p style="margin:10px 0 0;font-size:12px;color:var(--faint)">تحديث الصفحة: 15 نوفمبر، 3:35 م</p></section>`;
   m.innerHTML=h;
 }
 function growTitles(){document.querySelectorAll('textarea.title-in').forEach(t=>{t.style.height='auto';t.style.height=t.scrollHeight+2+'px'})}
@@ -2191,8 +2193,9 @@ async function connectOnce(){
       obOverlay(m,vm);S.vacs=vm;S.items=m;S.ready=true;S.fromCache=0;S.net='ok';render();cacheSave();netUI();obFlush();if(!S.updRetried){S.updRetried=1;setTimeout(()=>{calLost();calRetry()},1500)}
     },err=>{S.ready=true;render();if(err&&err.code==='revoked')note('انقطع الوصول إلى بياناتك. أعد فتح الصفحة.');else if(S.items.size){S.net='off';netUI()}else note('تعذّر تحميل بياناتك. أعد فتح الصفحة.')});
     obFlush();
-  }else{S.ready=true;render();if(S.items.size||OB.map.size){S.net='off';netUI()}else if(navigator.onLine===false){S.net='off';netUI()}else if(!S.loginNoted){S.loginNoted=1;note('سجّل الدخول إلى Claude ليُحفظ دفترك في حسابك.')}}
+  }else{S.ready=true;render();if(S.items.size||OB.map.size){S.net='off';netUI()}else if(navigator.onLine===false){S.net='off';netUI()}else if(!S.loginNoted){S.loginNoted=1;0}}
 }
+window.addEventListener('daftar-rerender',()=>{try{render()}catch(_){}});
 boot();
 })();
 </script>
@@ -2200,6 +2203,7 @@ boot();
 <style>
 /* التطبيق المستقل: لا يوجد رأس Claude يزيح الصفحة، فيستقر الشريط فوق حافة الشاشة مباشرة */
 :root{--navgap:calc(env(safe-area-inset-bottom,0px) + 10px)!important}
+#netbar.calm{color:var(--muted)}
 </style>
 </body>
 </html>

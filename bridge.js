@@ -129,12 +129,183 @@
     setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1500);
   }
 
+  /* ---------- الدوال في الخادم (الفهم الذكي والتقويم) ---------- */
+  const FN = C.url + '/functions/v1/';
+  async function fnFetch(name, body, signal) {
+    const session = await liveSession();
+    return fetch(FN + name, {
+      method: 'POST', signal,
+      headers: { 'Content-Type': 'application/json', apikey: C.key, Authorization: 'Bearer ' + session.access_token },
+      body: JSON.stringify(body)
+    });
+  }
+  const isAbort = e => e && (e.name === 'AbortError' || e.code === 'cancelled');
+
+  /* الفهم الذكي: نفس واجهة Claude — sample(نص) للمسودات مع البث، و sample.json(نص) للفهم */
+  async function aiCall(prompt, opts = {}, asJson) {
+    if (navigator.onLine === false) throw { code: 'offline' };
+    const ac = new AbortController(); const t = setTimeout(() => ac.abort(), 60000);
+    if (opts.signal) { if (opts.signal.aborted) ac.abort(); opts.signal.addEventListener('abort', () => ac.abort()); }
+    try {
+      let r;
+      try { r = await fnFetch('ai', { prompt, json: !!asJson, tier: opts.modelTier === 'quick' ? 'quick' : 'default', stream: !asJson && !!opts.onText }, ac.signal); }
+      catch (e) { if (opts.signal && opts.signal.aborted) throw { code: 'cancelled' }; if (e && e.code) throw e; throw { code: 'unavailable' }; }
+      /* الدالة غير منشورة بعد (404) أو بلا مفتاح: الدفتر يرتّب محليًا دون رسالة خطأ */
+      if (!r.ok) { const e = await r.json().catch(() => ({})); throw { code: r.status === 404 ? 'not_configured' : (['rate_limited', 'refused', 'session_expired', 'not_configured'].includes(e.code) ? e.code : 'unavailable') }; }
+      if ((r.headers.get('content-type') || '').includes('text/event-stream')) {
+        const rd = r.body.getReader(), dec = new TextDecoder(); let buf = '', text = '', stop = '';
+        for (;;) {
+          const { done, value } = await rd.read(); if (done) break;
+          buf += dec.decode(value, { stream: true }); const parts = buf.split('\n'); buf = parts.pop();
+          for (const ln of parts) {
+            if (!ln.startsWith('data:')) continue;
+            let ev; try { ev = JSON.parse(ln.slice(5)); } catch (_) { continue; }
+            if (ev.type === 'content_block_delta' && ev.delta && ev.delta.type === 'text_delta') { text += ev.delta.text; try { opts.onText({ text }); } catch (_) {} }
+            if (ev.type === 'message_delta' && ev.delta) stop = ev.delta.stop_reason || stop;
+            if (ev.type === 'error') throw { code: 'unavailable' };
+          }
+        }
+        if (stop === 'refusal') throw { code: 'refused' };
+        return { text, truncated: stop === 'max_tokens' };
+      }
+      const o = await r.json();
+      if (o.code) throw { code: o.code };
+      if (!asJson) { if (opts.onText) try { opts.onText({ text: o.text }); } catch (_) {} return { text: o.text, truncated: !!o.truncated }; }
+      /* يُستخرج أول كائن JSON من الرد ولو أحاط به نص */
+      const s = String(o.text || ''), a = s.search(/[[{]/), b = Math.max(s.lastIndexOf('}'), s.lastIndexOf(']'));
+      try { return JSON.parse(a >= 0 && b > a ? s.slice(a, b + 1) : s); } catch (_) { throw { code: 'invalid_json' }; }
+    } catch (e) { if (isAbort(e) || (opts.signal && opts.signal.aborted)) throw { code: 'cancelled' }; throw e; }
+    finally { clearTimeout(t); }
+  }
+  const sample = (prompt, opts) => aiCall(prompt, opts, false);
+  sample.json = (prompt, opts) => aiCall(prompt, opts, true);
+
+  /* ---------- تقويم Google: يعمل بلا إنترنت ----------
+     الإضافة تأخذ رقمًا يولّده الجوال، فإن تعذّر الإرسال حُفظت في طابور وأُرسلت لاحقًا بالرقم نفسه دون تكرار.
+     التعديل والحذف يُدمجان في الطابور مع ما سبقهما للحدث نفسه. */
+  const TZ = (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Riyadh'; } catch (_) { return 'Asia/Riyadh'; } })();
+  const QK = () => 'daftar-calout-' + (storedUid() || 'x');
+  const qLoad = () => { try { return JSON.parse(localStorage.getItem(QK()) || '[]'); } catch (_) { return []; } };
+  const qSave = q => { try { localStorage.setItem(QK(), JSON.stringify(q)); } catch (_) {} };
+  const newEventId = () => { const a = crypto.getRandomValues(new Uint8Array(20)); return 'd' + [...a].map(x => '0123456789abcdefghijklmnopqrstuv'[x & 31]).join(''); };
+  const softErr = c => c === 'unavailable' || c === 'server_unavailable' || c === 'offline';
+  let calState = (() => { try { return JSON.parse(localStorage.getItem('daftar-gcal') || 'null'); } catch (_) { return null; } })();
+  const setCal = s => { calState = s; try { localStorage.setItem('daftar-gcal', JSON.stringify(s)); } catch (_) {} rerender(); };
+
+  async function calSend(tool, args) {
+    if (navigator.onLine === false) throw { code: 'offline' };
+    let r; try { r = await fnFetch('gcal', { action: 'call', tool, args, tz: TZ }); } catch (e) { throw { code: e && e.code === 'revoked' ? 'revoked' : 'unavailable' }; }
+    const o = await r.json().catch(() => null);
+    if (r.status === 404 || (o && o.code === 'not_configured')) throw { code: 'server_not_connected' };
+    if (!r.ok || !o) throw { code: r.status === 401 ? 'session_expired' : 'server_unavailable' };
+    if (o.error) throw o.error;
+    return o;
+  }
+  function enqueue(tool, args) {
+    let q = qLoad(); const id = args.eventId;
+    const prev = q.filter(x => x.args.eventId === id);
+    if (tool === 'delete_event' && prev.some(x => x.tool === 'create_event')) { qSave(q.filter(x => x.args.eventId !== id)); return; }
+    if (tool === 'update_event' && prev.length) { const last = prev[prev.length - 1]; if (last.tool !== 'delete_event') { last.args = Object.assign({}, last.args, args); qSave(q); return; } }
+    if (tool === 'delete_event') q = q.filter(x => x.args.eventId !== id);
+    q.push({ tool, args }); qSave(q);
+  }
+  let flushing = false;
+  async function calFlush() {
+    if (flushing || navigator.onLine === false || !storedUid()) return;
+    let q = qLoad(); if (!q.length) return; flushing = true;
+    try {
+      while (q.length) {
+        const op = q[0];
+        try { await calSend(op.tool, op.args); }
+        catch (e) {
+          const c = e && e.code;
+          if (softErr(c) || c === 'revoked' || c === 'session_expired') break; /* يعاد لاحقًا */
+          if (c === 'needs_reauth' || c === 'server_not_connected') { setCal({ connected: false, email: calState && calState.email, reauth: c === 'needs_reauth' }); break; }
+          const gone = c === 'tool_error' && /not ?found|404|410/i.test(String(e.message || ''));
+          if (!gone) toast('لم يصل تعديل إلى تقويم Google: ' + String(e.message || c).slice(0, 80));
+        }
+        q = qLoad(); q.shift(); qSave(q);
+      }
+    } finally { flushing = false; }
+  }
+  addEventListener('online', () => setTimeout(calFlush, 1500));
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') calFlush(); });
+  setInterval(calFlush, 60000);
+
+  const mcp = {
+    async callTool(server, tool, args) {
+      args = Object.assign({}, args || {});
+      if (tool === 'create_event' && !args.eventId) args.eventId = newEventId();
+      if (calState && calState.connected === false && !calState.unknown) throw { code: calState.reauth ? 'needs_reauth' : 'server_not_connected' };
+      /* ما سبقه في الطابور للحدث نفسه يُرسل أولًا، فيبقى الترتيب صحيحًا */
+      if (qLoad().some(x => x.args.eventId === args.eventId)) { enqueue(tool, args); calFlush(); return { payload: { id: args.eventId, queued: true } }; }
+      try { return await calSend(tool, args); }
+      catch (e) {
+        const c = e && e.code;
+        if (softErr(c) || c === 'revoked' || c === 'session_expired') { enqueue(tool, args); return { payload: { id: args.eventId, queued: true } }; }
+        if (c === 'server_not_connected' || c === 'needs_reauth') setCal({ connected: false, email: calState && calState.email, reauth: c === 'needs_reauth' });
+        throw e;
+      }
+    }
+  };
+
+  /* ربط التقويم من قسم «بياناتك» */
+  async function calStatus() {
+    if (navigator.onLine === false || !storedUid()) return;
+    try { const r = await fnFetch('gcal', { action: 'status' }); const o = await r.json(); if (r.ok && 'connected' in o) setCal({ connected: o.connected, email: o.email }); } catch (_) {}
+  }
+  async function calConnect() {
+    if (navigator.onLine === false) return toast('الربط يحتاج الإنترنت.');
+    try {
+      const r = await fnFetch('gcal', { action: 'start', returnTo: location.origin + location.pathname });
+      const o = await r.json(); if (!r.ok || !o.url) throw o;
+      location.href = o.url;
+    } catch (e) { toast(e && e.code === 'not_configured' ? 'ربط التقويم لم يُجهَّز في الخادم بعد.' : 'تعذّر بدء الربط. جرّب بعد قليل.'); }
+  }
+  async function calDisconnect() {
+    if (!confirm('تفصل تقويم Google عن الدفتر؟ الأحداث الموجودة تبقى في التقويم.')) return;
+    try { await fnFetch('gcal', { action: 'disconnect' }); setCal({ connected: false }); toast('فُصل تقويم Google.'); } catch (_) { toast('تعذّر الفصل الآن.'); }
+  }
+  window.DaftarCalHTML = () => {
+    const s = calState;
+    if (s && s.connected) return `<div class="data-row" style="margin-top:8px;align-items:center"><span style="font-size:13px;color:var(--muted)">✓ تقويم Google مربوط${s.email ? ' · <bdi dir="ltr">' + String(s.email).replace(/[<>&"]/g, '') + '</bdi>' : ''}</span><button class="btn quiet small" data-gcal="off">افصل</button></div>`;
+    return `<div class="data-row" style="margin-top:8px"><button class="btn primary small" data-gcal="on">${s && s.reauth ? 'أعد ربط تقويم Google' : 'اربط تقويم Google'}</button></div>`;
+  };
+  document.addEventListener('click', e => {
+    const b = e.target.closest && e.target.closest('[data-gcal]'); if (!b) return;
+    e.preventDefault(); e.stopPropagation();
+    if (b.dataset.gcal === 'on') calConnect(); else calDisconnect();
+  }, true);
+  function rerender() { try { window.dispatchEvent(new Event('daftar-rerender')); } catch (_) {} }
+  /* العودة من Google */
+  const GC = (location.hash.match(/gcal=([a-z-]+)/) || [])[1];
+  if (GC) {
+    history.replaceState(null, '', location.pathname);
+    const msg = { ok: '✓ رُبط تقويم Google بالدفتر.', denied: 'لم تكتمل الموافقة على الربط.', expired: 'انتهت مهلة الربط. أعد المحاولة.', failed: 'تعذّر إكمال الربط. أعد المحاولة.' }[GC];
+    if (msg) setTimeout(() => toast(msg), 600);
+    if (GC === 'ok') { calState = { connected: true }; setTimeout(calStatus, 300); }
+  }
+  setTimeout(() => { calStatus(); calFlush(); }, 2500);
+
+  function toast(msg) {
+    const show = () => {
+      let d = document.getElementById('bridge-toast');
+      if (!d) { d = document.createElement('div'); d.id = 'bridge-toast'; d.setAttribute('role', 'status'); d.setAttribute('dir', 'rtl');
+        d.style.cssText = 'position:fixed;inset-inline:16px;top:calc(env(safe-area-inset-top,0px) + 12px);z-index:2147483002;max-width:520px;margin:0 auto;padding:10px 14px;border-radius:14px;background:var(--fg,#1D1828);color:var(--bg,#fff);font:500 14px/1.6 var(--f-body,system-ui);box-shadow:0 8px 28px rgba(20,10,45,.25);text-align:center';
+        document.body.appendChild(d); }
+      d.textContent = msg; clearTimeout(toast.h); toast.h = setTimeout(() => d.remove(), 4500);
+    };
+    if (document.body) show(); else document.addEventListener('DOMContentLoaded', show);
+  }
+
   window.claude = {
     use: async name => {
       if (name === 'db') return { collection };
       if (name === 'user') return { id: async () => storedUid() };
       if (name === 'downloads') return { save };
-      throw { code: 'unavailable' }; /* sample و mcp: المرحلة 3 */
+      if (name === 'sample') return sample;
+      if (name === 'mcp') return mcp;
+      throw { code: 'unavailable' };
     }
   };
 

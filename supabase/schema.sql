@@ -29,3 +29,14 @@ create trigger items_touch before update on public.items
   for each row execute function public.touch_updated_at();
 create trigger meta_touch before update on public.meta
   for each row execute function public.touch_updated_at();
+
+-- ---------- المرحلة 3: مفتاح تجديد تقويم Google ----------
+-- يقرؤه ويكتبه الخادم وحده (دالة gcal بمفتاح الخدمة). القواعد مفعّلة بلا أي سياسة، فلا يصل إليه الجوال ولا أي مستخدم.
+create table if not exists public.gcal_tokens (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  refresh_token text not null,
+  email text,
+  updated_at timestamptz not null default now()
+);
+alter table public.gcal_tokens enable row level security;
+revoke all on public.gcal_tokens from anon, authenticated;
