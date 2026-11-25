@@ -207,6 +207,35 @@
   sb.auth.onAuthStateChange(ev => { if (ev === 'SIGNED_OUT') authLost(); });
 
   /* حفظ التطبيق على الجوال ليفتح بلا إنترنت، وطلب حماية بياناته من المسح التلقائي */
-  if ('serviceWorker' in navigator) addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+  /* يُسجَّل فورًا لا بعد اكتمال التحميل، حتى يُحفظ التطبيق ولو أُغلق سريعًا */
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js').then(() => navigator.serviceWorker.ready)
+      .then(() => caches.match('index.html')).then(hit => offlineStatus(!!hit)).catch(() => offlineStatus(false));
+  } else offlineStatus(false);
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
+
+  /* الآيفون يحفظ نسخة مستقلة لكل طريقة فتح (سفاري، رابط داخل تطبيق، أيقونة الشاشة الرئيسية)،
+     والأيقونة وحدها تفتح بلا إنترنت بثبات. فيُنبَّه حين يُفتح من غيرها، ويُطمأن مرة حين تجهز الأيقونة. */
+  function offlineStatus(ready) {
+    const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+    const ss = (k, v) => { try { if (v === undefined) return sessionStorage.getItem(k); sessionStorage.setItem(k, v); } catch (_) {} };
+    const ls = (k, v) => { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (_) {} };
+    let msg = '', sticky = false;
+    if (!standalone && !ss('daftar-open-hint')) { ss('daftar-open-hint', '1'); sticky = true;
+      msg = 'للعمل بلا إنترنت افتح الدفتر من أيقونته على الشاشة الرئيسية، لا من رابط أو من سفاري.'; }
+    else if (standalone && ready && !ls('daftar-offline-ok')) { ls('daftar-offline-ok', '1');
+      msg = '✓ الدفتر محفوظ على جوالك ويفتح بلا إنترنت.'; }
+    if (!msg) return;
+    const show = () => {
+      const st = document.createElement('style');
+      st.textContent = `#offhint{position:fixed;inset-inline:12px;bottom:calc(92px + var(--navgap,80px));z-index:2147483001;max-width:536px;margin:0 auto;display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:14px;background:var(--surface,#fff);color:var(--fg,#1D1828);border:1px solid var(--line,#E3E0EA);box-shadow:0 8px 28px rgba(20,10,45,.18);font:500 14px/1.6 var(--f-body,system-ui)}
+#offhint p{margin:0;flex:1}#offhint button{font:inherit;font-weight:600;border:0;border-radius:10px;padding:8px 12px;min-height:40px;background:var(--brand,#522D8E);color:#fff}`;
+      document.head.appendChild(st);
+      const d = document.createElement('div'); d.id = 'offhint'; d.setAttribute('dir', 'rtl'); d.setAttribute('role', 'status');
+      d.innerHTML = '<p></p><button type="button">فهمت</button>'; d.querySelector('p').textContent = msg;
+      d.querySelector('button').onclick = () => d.remove(); document.body.appendChild(d);
+      if (!sticky) setTimeout(() => d.remove(), 5000);
+    };
+    if (document.body) show(); else document.addEventListener('DOMContentLoaded', show);
+  }
 })();

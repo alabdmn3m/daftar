@@ -1,12 +1,18 @@
 /* دفتر المهام — عامل الخدمة: يحفظ ملفات التطبيق على الجوال ليفتح بلا إنترنت.
-   ملفات التطبيق: من الحفظ أولًا ثم تُحدَّث في الخلفية. طلبات البيانات (Supabase): تمر للشبكة دائمًا. */
-const VERSION = 'daftar-v3';
-const SHELL = ['./', 'index.html', 'bridge.js', 'config.js', 'supabase.js', 'manifest.webmanifest',
-  'icon-192.png', 'icon-512.png', 'icon-maskable-512.png', 'apple-touch-icon.png',
+   ملفات التطبيق: من الحفظ أولًا ثم تُحدَّث في الخلفية. طلبات البيانات (Supabase): تمر للشبكة دائمًا.
+   الأساسية تُحفظ كلها أو لا شيء؛ الخطوط والأيقونات كلٌّ على حدة، فلا يُفشل ملفٌّ واحد الحفظ كله. */
+const VERSION = 'daftar-v4';
+const CORE = ['./', 'index.html', 'bridge.js', 'config.js', 'supabase.js'];
+const EXTRA = ['manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'icon-maskable-512.png', 'apple-touch-icon.png',
   ...['arabic', 'latin'].flatMap(s => [400, 500, 600, 700].map(w => `fonts/ibm-plex-sans-arabic-${s}-${w}-normal.woff2`))];
 
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(VERSION).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  e.waitUntil((async () => {
+    const c = await caches.open(VERSION);
+    await c.addAll(CORE);
+    await Promise.all(EXTRA.map(u => c.add(u).catch(() => {})));
+    await self.skipWaiting();
+  })());
 });
 
 self.addEventListener('activate', e => {
@@ -20,14 +26,17 @@ self.addEventListener('fetch', e => {
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return; // البيانات تذهب للشبكة مباشرة
-  const key = req.mode === 'navigate' ? 'index.html' : req;
-  e.respondWith(caches.open(VERSION).then(async cache => {
-    const hit = await cache.match(key, { ignoreSearch: true });
-    const net = fetch(req).then(res => {
-      if (res && res.ok) cache.put(key, res.clone());
-      return res;
-    }).catch(() => null);
-    if (hit) { e.waitUntil(net); return hit; }
+  const nav = req.mode === 'navigate';
+  const net = fetch(req).then(async res => {
+    if (res && res.ok) { const c = await caches.open(VERSION); await c.put(nav ? 'index.html' : req, res.clone()); }
+    return res;
+  }).catch(() => null);
+  e.waitUntil(net.then(() => {}));
+  e.respondWith((async () => {
+    const c = await caches.open(VERSION);
+    const hit = nav ? (await c.match('index.html')) || (await c.match('./'))
+                    : await c.match(req, { ignoreSearch: true });
+    if (hit) return hit;
     return (await net) || new Response('غير متصل', { status: 503, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
-  }));
+  })());
 });
