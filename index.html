@@ -499,6 +499,7 @@ body.has-bnav .note{bottom:calc(84px + var(--navgap))!important}
 #netbar.on{opacity:1;transform:none}
 #netbar.off{border-color:#C2410C;color:#C2410C}
 #netbar.ok{border-color:#15803D;color:#15803D}
+#netbar.calm{color:var(--muted)}
 @media (prefers-reduced-motion:reduce){#netbar{transition:none}}
 body.net-on.has-bnav .note{bottom:calc(var(--navgap) + 118px)!important}
 body.kb #netbar{bottom:12px}
@@ -627,15 +628,14 @@ async function obFlush(){
 }
 function netUI(){
   let el=document.getElementById('netbar');if(!el){el=document.createElement('div');el.id='netbar';el.setAttribute('role','status');el.setAttribute('aria-live','polite');document.body.appendChild(el)}
-  const n=OB.map.size,off=S.net==='off'||navigator.onLine===false;let t='',k='';
+  const n=OB.map.size,off=S.net==='off'||navigator.onLine===false;let t='',k='';if(!off)S.offShown=0;
   const ago=S.fromCache?Math.max(1,Math.round((Date.now()-S.fromCache)/60000)):0,agoT=ago<60?`قبل ${ago} د`:ago<1440?`قبل ${Math.round(ago/60)} س`:`قبل ${Math.round(ago/1440)} يوم`;
-  if(off&&n)t=`غير متصل · ${n===1?'تعديل واحد محفوظ':n===2?'تعديلان محفوظان':n+' تعديلات محفوظة'} على جوالك ويُرسل تلقائيًا`,k='off';
-  else if(off&&S.fromCache)t=`غير متصل · تعرض آخر نسخة (${agoT})`,k='off';
-  else if(off)t='غير متصل · أي تعديل يُحفظ على جوالك ويُرسل لاحقًا',k='off';
+  if(off&&n)t=`بلا إنترنت · ${n===1?'تعديل واحد محفوظ':n===2?'تعديلان محفوظان':n+' تعديلات محفوظة'} على جوالك ويُرسل تلقائيًا`,k='calm';
+  else if(off){if(!S.offShown){S.offShown=1;t='بلا إنترنت · الدفتر يعمل وتعديلاتك تُحفظ على جوالك',k='calm brief'}}
   else if(n)t=`يُرسل ${n===1?'تعديلًا واحدًا':n===2?'تعديلين':n+' تعديلات'}…`,k='busy';
   else if(S.fromCache)t=`آخر نسخة محفوظة (${agoT}) · يجري التحديث…`,k='busy';
   else if(OB.sent){t='✓ أُرسلت كل التعديلات',k='ok';OB.sent=0}
-  document.body.classList.toggle('net-on',!!t);if(t){clearTimeout(netUI.h);netUI.h=0;el.textContent=t;el.className='on '+k;if(k==='ok')netUI.h=setTimeout(()=>{el.className='';netUI.h=0;document.body.classList.remove('net-on')},2600)}
+  document.body.classList.toggle('net-on',!!t);if(t){clearTimeout(netUI.h);netUI.h=0;el.textContent=t;el.className='on '+k;if(k==='ok'||k==='calm brief')netUI.h=setTimeout(()=>{el.className='';netUI.h=0;document.body.classList.remove('net-on')},k==='ok'?2600:3000)}
   else if(!netUI.h)el.className='';
 }
 addEventListener('online',()=>{S.net='ok';netUI();obFlush();if(!S.col&&typeof connect==='function')connect()});
