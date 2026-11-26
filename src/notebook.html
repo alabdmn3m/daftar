@@ -698,12 +698,19 @@ function repRepair(){const t=today(),fix=[],drop=[];
     const doneHere=[...S.items.values()].some(c=>c.recOf===it.id&&c.doneAt&&isoOf(new Date(c.doneAt))>=repBase(it,t));
     let k=repBase(it,t);if(doneHere){let n=0;do{k=repStep(k,it.rep.f,it.rep.d)}while(k<=t&&n++<1200)}
     if(it.remindTime)it.remindDate=k;else it.due=k;fix.push(it)}
+  /* ضغطات متكررة في يوم واحد دفعت موعدها أشهرًا: يُعاد إلى أول دورة بعد يوم الإنجاز */
+  const byDay=new Map();[...S.items.values()].filter(c=>c.recOf&&c.status==='done'&&c.doneAt&&c.type!=='meeting').forEach(c=>{const k=c.recOf+'|'+isoOf(new Date(c.doneAt));byDay.set(k,(byDay.get(k)||0)+1)});
+  for(const [k,n] of byDay){if(n<2)continue;const [rid,day]=k.split('|');const it=S.items.get(rid);if(!it||it.status==='done'||!repF(it))continue;
+    const a=it.due||it.remindDate;if(!ISO_RE.test(a||''))continue;let e=repBase(it,day),g=0;while(e<=day&&g++<1200)e=repStep(e,it.rep.f,it.rep.d);
+    if(a>e){if(it.due&&it.remindDate){const gap=Math.round((fromIso(it.remindDate)-fromIso(it.due))/864e5);it.due=e;it.remindDate=addDays(e,gap)}else if(it.due)it.due=e;else it.remindDate=e;if(!fix.includes(it))fix.push(it)}}
   const seen=new Map();[...S.items.values()].filter(c=>c.recOf&&c.status==='done'&&c.doneAt&&c.type!=='meeting').sort((a,b)=>a.doneAt-b.doneAt).forEach(c=>{const key=c.recOf+'|'+isoOf(new Date(c.doneAt));if(seen.has(key))drop.push(c.id);else seen.set(key,1)});
   fix.forEach(persist);drop.forEach(removeItem);return fix.length+drop.length}
 function repRoll(id){
   const it=get(id);if(!it||!repF(it)||it.status==='done')return null;
   /* ضغطتان متتاليتان على المهمة نفسها تُحسبان إنجازًا واحدًا */
   S.rollAt=S.rollAt||{};if(Date.now()-(S.rollAt[id]||0)<4000)return null;S.rollAt[id]=Date.now();
+  /* أُنجزت دورتها اليوم: لا تُسجَّل مرة ثانية ولا تُدفع شهرًا آخر */
+  {const td=today();if([...S.items.values()].some(c=>c.recOf===id&&c.status==='done'&&c.doneAt&&isoOf(new Date(c.doneAt))===td&&c.type===it.type)){const a=repAnchor(it);note(`سُجّل إنجازها اليوم، وموعدها التالي ${a?fmtDay(a):'محفوظ'}.`,5000);return null}}
   const snap=JSON.parse(JSON.stringify(it)),t=today();
   /* متكررة بلا تاريخ تبدأ منه: يُشتق يوم هذه الدورة من قاعدة التكرار، وإلا لا ينتقل إنجازها للدورة التالية فتبقى مكانها */
   if(it.type!=='meeting'&&!it.due&&!it.remindDate){const k=repBase(it,t);if(it.remindTime)it.remindDate=k;else it.due=k}
@@ -1299,7 +1306,7 @@ function needsDecisionAll(open){
     if(st.k==='late')out.push([i,st.label]);
     else if(ok||st.k==='today'||i.pDay===t);
     else if((i.postponed||0)-(i.pAck||0)>=3)out.push([i,`أُجّلت ${i.postponed} مرات`]);
-    else if(!(i.days||[]).length&&!i.due&&!isTop(i)&&(i.createdAt||0)<weekAgo)out.push([i,'بلا يوم محدد منذ أسبوع']);
+    else if(!(i.days||[]).length&&!i.due&&!ISO_RE.test(i.remindDate||'')&&!(repF(i)&&repAnchor(i))&&!isTop(i)&&(i.createdAt||0)<weekAgo)out.push([i,'بلا يوم محدد منذ أسبوع']);
     else if(i.size==='big'&&(i.createdAt||0)<weekAgo&&weekSecs(i,from)<60)out.push([i,'كبيرة ولم تتحرك منذ أسبوع']);
   });
   return out;
@@ -1944,7 +1951,7 @@ case 'cal-mlist':S.calMList=!calMListOn();try{localStorage.setItem('daftar-cal-m
     case 'mtg-follow':{const it=get(id);if(!it)break;S.followFor=id;const ta=document.getElementById('entry');const ad=adviceFor(it);ta.value=(ad.act==='follow'&&ad.text)?ad.text:`متابعة «${it.title}»: `;window.scrollTo({top:0,behavior:'smooth'});setTimeout(()=>{ta.focus();ta.setSelectionRange(ta.value.length,ta.value.length)},300);note('اكتب المتابعة وأرسلها، ويُغلق الموعد عند إضافتها.',5000);break}
     case 'mtg-cxl':{const it=get(id);if(!it)break;S.editId=null;S.eb=null;S.confirm=null;it.status='done';it.cancelled=true;it.mtgClosed=true;it.doneAt=null;await persist(it);if(it.calEventId)calUpdate(id);note('أُلغي الموعد، وبقي في التقويم مشطوبًا بلا تنبيهات.',6000,()=>fire('mtg-uncxl',id));break}
     case 'mtg-uncxl':{const it=get(id);if(!it)break;it.status='open';it.cancelled=false;it.mtgClosed=false;it.doneAt=null;it._wasCx=true;await persist(it);if(it.calEventId)await calUpdate(id);const c=get(id);if(c&&c._wasCx){delete c._wasCx;persist(c)}note('أُعيد الموعد وتنبيهاته.',3000);break}
-    case 'mtg-close':{const it=get(id);if(!it)break;if(repF(it)){if(S.followFor===id)S.followFor=null;const u=repRoll(id);note('أُغلق، وظهر موعده التالي.',5000,u);break}it.status='done';it.mtgClosed=true;it.doneAt=new Date(`${it.date}T${it.time||'12:00'}`).getTime()||Date.now();if(S.followFor===id)S.followFor=null;
+    case 'mtg-close':{const it=get(id);if(!it)break;if(repF(it)){if(S.followFor===id)S.followFor=null;const u=repRoll(id);if(u)note('أُغلق، وظهر موعده التالي.',5000,u);break}it.status='done';it.mtgClosed=true;it.doneAt=new Date(`${it.date}T${it.time||'12:00'}`).getTime()||Date.now();if(S.followFor===id)S.followFor=null;
       const undo=()=>{const c=get(id);if(!c)return;c.status='open';c.doneAt=null;c.mtgClosed=false;persist(c)};persist(it);note('أُغلق الموعد.',5000,undo);break}
     case 'carry-top':{const tt=today();const cur=[...S.items.values()].filter(i=>i.status!=='done'&&isTop(i)).length;
       const y=[...S.items.values()].filter(i=>i.status!=='done'&&i.type!=='meeting'&&!isWaiting(i)&&!isTop(i)&&i.topDate&&i.topDate<tt&&i.topDate>=addDays(tt,-3)).sort((a,b)=>a.topDate<b.topDate?1:-1).slice(0,Math.max(0,3-cur));
@@ -2004,7 +2011,7 @@ case 'cal-mlist':S.calMList=!calMListOn();try{localStorage.setItem('daftar-cal-m
     case 'imp-no':S.imp=null;render();break;
     case 'pause':anchored(id,()=>pauseTimer(id));break;
     case 'done':{if(!b.dataset.go){const row=document.getElementById('row-'+id);if(row&&!row.classList.contains('leaving')){row.classList.add('leaving');setTimeout(()=>fire('done',id),430);break}}
-      if(repF(get(id)||{})){if(S.editId===id){S.editId=null;S.eb=null}const u=repRoll(id);note('أُنجز وسُجّل، وظهر موعده التالي.',6000,u);break}
+      if(repF(get(id)||{})){if(S.editId===id){S.editId=null;S.eb=null}const u=repRoll(id);if(u)note('أُنجز وسُجّل، وظهر موعده التالي.',6000,u);break}
       const it=get(id);if(!it)break;const wasTop=isTop(it);setTimeout(()=>{if(wasTop){const t=today();const tops=[...S.items.values()].filter(i=>i.topDate===t);if(tops.length>=3&&tops.every(i=>i.status==='done'))celebrate('أنهيت أهم 3 اليوم. يوم منتج!')}},50);if(it.runningSince)accrue(it,Date.now());it.status='done';it.doneAt=Date.now();if(S.editId===id){S.editId=null;S.eb=null}
       const undo=()=>{const c=get(id);if(!c)return;c.status='open';c.doneAt=null;persist(c).then(()=>{if(c.type==='task'&&!c.calEventId&&calReady(c)&&remindFuture(c))calCreate(id)})};
       if(it.type==='task'&&it.calEventId&&remindFuture(it)){const old=Object.assign({},it);it.calEventId=null;it.calStatus=null;it.calError=null;persist(it);calDelete(old)}else persist(it);
