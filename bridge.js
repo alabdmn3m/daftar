@@ -9,7 +9,16 @@
   /* نوع الرابط القادم من البريد (دعوة أو استعادة كلمة مرور) يُقرأ قبل أن تستهلكه المكتبة */
   const LINK = (location.hash.match(/type=(invite|recovery|signup|magiclink)/) || [])[1] || null;
 
+  /* طلبات الدخول لا تُقطع ولا تُقاطَع بإعادة تحميل: الخادم يستبدل مفتاح التجديد عند كل طلب،
+     فإن ضاع الرد بقي على الجوال مفتاح مستعمل، فيُلغي الخادم الجلسة كلها ويُطلب الدخول من جديد. */
+  const authNet = { busy: 0, last: 0 };
+  window.DaftarAuthNet = authNet;
   const timedFetch = (input, init = {}) => {
+    const url = typeof input === 'string' ? input : (input && input.url) || '';
+    if (url.includes('/auth/v1/')) {
+      authNet.busy++;
+      return fetch(input, init).finally(() => { authNet.busy--; authNet.last = Date.now(); });
+    }
     const ac = new AbortController();
     const t = setTimeout(() => ac.abort(), TIMEOUT);
     if (init.signal) init.signal.addEventListener('abort', () => ac.abort());
@@ -337,7 +346,7 @@
 <button type="submit">احفظ وافتح الدفتر</button><div id="g-err" class="err"></div></form></div>`
         : `<div class="gc"><h1>دفتر المهام</h1>
 <p>${msg || 'ادخل ببريدك وكلمة مرور الدفتر. الدخول أول مرة يحتاج الإنترنت، ثم يعمل الدفتر بدونه.'}</p>
-<form id="g-lf"><input id="g-em" type="email" autocomplete="username" placeholder="البريد" dir="ltr" required>
+<form id="g-lf"><input id="g-em" type="email" autocomplete="username" placeholder="البريد" dir="ltr" required value="${(() => { try { return (localStorage.getItem('daftar-email') || '').replace(/[^\w.@+-]/g, ''); } catch (_) { return ''; } })()}">
 <input id="g-pw" type="password" autocomplete="current-password" placeholder="كلمة المرور" dir="ltr" required>
 <button type="submit">دخول</button><button type="button" id="g-forgot" class="ghost">نسيت كلمة المرور</button>
 <div id="g-err" class="err" role="status" aria-live="polite"></div></form></div>`;
@@ -357,6 +366,7 @@
       $('g-lf').addEventListener('submit', async e => {
         e.preventDefault(); err('');
         if (navigator.onLine === false) return err('لا يوجد اتصال. الدخول أول مرة يحتاج الإنترنت.');
+        try { localStorage.setItem('daftar-email', $('g-em').value.trim()); } catch (_) {}
         const { error } = await sb.auth.signInWithPassword({ email: $('g-em').value.trim(), password: $('g-pw').value });
         if (error) return err(error.status >= 500 || !error.status ? 'تعذّر الاتصال. حاول بعد قليل.' : 'البريد أو كلمة المرور غير صحيحة.');
         location.replace(location.pathname);
@@ -393,7 +403,7 @@
     }).then(() => caches.match('index.html')).then(hit => offlineStatus(!!hit)).catch(() => offlineStatus(false));
     /* وصل إصدار جديد: تُعاد الصفحة مرة واحدة فيظهر من الفتحة نفسها، لا في الفتحة التالية.
        لا تُعاد أثناء الكتابة أو والمحرّر مفتوح أو عناصر بانتظار المراجعة؛ تنتظر إلى أن يفرغ أو يُغلق التطبيق. */
-    const busy = () => !!document.querySelector('input:focus, textarea:focus, select:focus, [data-act="e-save"], #review [data-act="p-add"]');
+    const busy = () => authNet.busy > 0 || Date.now() - authNet.last < 3000 || !!document.querySelector('input:focus, textarea:focus, select:focus, [data-act="e-save"], #review [data-act="p-add"]');
     let reloading = false;
     const reloadSoon = () => {
       if (reloading) return;
@@ -402,7 +412,7 @@
     };
     navigator.serviceWorker.addEventListener('controllerchange', () => {
       if (!hadSW) return; // أول تثبيت: الصفحة جديدة أصلًا
-      if (document.visibilityState === 'hidden') { reloading = true; location.reload(); } else reloadSoon();
+      if (document.visibilityState === 'hidden' && authNet.busy === 0) { reloading = true; location.reload(); } else reloadSoon();
     });
   } else offlineStatus(false);
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
