@@ -171,7 +171,7 @@ textarea.title-in{resize:none;overflow:hidden;font-weight:600}
 .drow .t{font-weight:600;overflow-wrap:anywhere}
 .drow .why{font-size:12.5px;color:var(--late)}
 .drow .btns{display:flex;flex-wrap:wrap;gap:6px}
-.drow.pm-q .why{color:var(--muted)}
+.drow.pm-q .why{color:var(--muted)}.drow.dec .why{color:var(--late)}.drow.dec .btns{gap:5px}.drow.dec .btns .btn{padding-inline:9px}
 .adv{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:2px;padding:8px 10px;border-radius:12px;background:var(--brand-tint)}
 .adv p{margin:0;font-size:13.5px;line-height:1.5;color:var(--fg);flex:1 1 180px;min-width:0}
 .adv p b{color:var(--brand);font-weight:700}
@@ -1163,7 +1163,7 @@ function renderHeader(){
   const t=today();const all=[...S.items.values()];const open=all.filter(i=>i.status!=='done'&&!vacHide(i));
   const tasks=open.filter(i=>i.type!=='meeting');
   const own=tasks.filter(i=>!isWaiting(i));
-  const late=own.filter(i=>!isTop(i)&&taskState(i).k==='late').length+tasks.filter(i=>isWaiting(i)&&['late','today'].includes(waitState(i).k)).length+open.filter(i=>i.type==='meeting'&&!i.cat&&i.date&&i.date<t&&i.date>=addDays(t,-14)).length;
+  const late=own.filter(i=>!isTop(i)&&taskState(i).k==='late').length+tasks.filter(i=>isWaiting(i)&&['late','today'].includes(waitState(i).k)).length+open.filter(i=>i.type==='meeting'&&!i.cat&&i.date&&i.date<t&&i.date>=addDays(t,-14)).length+needsDecision(open).filter(([i])=>!isTop(i)).length;
   const tT=own.filter(i=>(i.days||[]).includes(t)||i.due===t||isTop(i)).length;
   const fw=tasks.filter(i=>isWaiting(i)&&!['late','today'].includes(waitState(i).k)).length;
   const tM=open.filter(i=>i.type==='meeting'&&i.date===t).length;
@@ -1343,6 +1343,10 @@ function needsDecisionAll(open){
   });
   return out;
 }
+/* صف قرار لعنصر راكد: سببه وأزرار الحسم، و«أبقها» تؤجّل السؤال عنه أسبوعًا */
+function decRow([i,why]){const a=`data-id="${i.id}"`;return `<li class="drow pm-q dec e-${i.entity}"><span class="t">${esc(i.title)}</span><span class="why">${esc(why)}</span>
+      <div class="btns"><button class="btn quiet small" data-act="done" ${a}>أنجزتها</button><button class="btn quiet small" data-act="rv-postpone" ${a}>${!isWaiting(i)&&(i.days||[]).length&&!(i.days||[]).some(d=>d<=today())?'أجّل يومًا':'أجّل لبكرة'}</button>${isWaiting(i)?'':`<button class="btn quiet small" data-act="delegate" ${a}>فوّضها</button>`}<button class="btn quiet small" data-act="rv-ok" ${a}>أبقها</button><button class="btn quiet small" data-act="askdel" ${a}>احذفها</button></div>
+      ${S.confirm===i.id?confirmHTML(i):''}</li>`}
 function reviewHTML(all,open){
   const t=today(),from=addDays(t,-6);const per={sadan:0,pm:0,personal:0};
   all.forEach(i=>{per[ENT[i.entity]?i.entity:'personal']+=weekSecs(i,from)});
@@ -1365,13 +1369,10 @@ function reviewHTML(all,open){
     ${dl.length?`<div class="lsplit" role="img" aria-label="توزيع الإنجازات على الجهات">${EK.filter(e=>ec[e]).map(e=>`<i class="bg-${e}" style="width:${ec[e]/dl.length*100}%"></i>`).join('')}</div>`:''}
     <ul class="lleg">${EK.map(e=>`<li><i class="ldot bg-${e}"></i>${ENT[e].short} <span class="num">${ec[e]}</span>${per[e]?` <span class="lt">· ${hm(per[e])}</span>`:''}</li>`).join('')}</ul>
     ${dl.length?`<div class="lbars">${bars}</div>`:''}</div></div>`:'';
-  const dRow=([i,why])=>{const a=`data-id="${i.id}"`;return `<li class="drow rv e-${i.entity}"><span class="t">${esc(i.title)}</span><span class="why">${esc(why)}</span>
-      <div class="btns"><button class="btn quiet small" data-act="done" ${a}>أنجزتها</button><button class="btn quiet small" data-act="rv-postpone" ${a}>${!isWaiting(i)&&(i.days||[]).length&&!(i.days||[]).some(d=>d<=today())?'أجّل يومًا':'أجّل لبكرة'}</button>${isWaiting(i)?'':`<button class="btn quiet small" data-act="delegate" ${a}>فوّضها</button>`}<button class="btn quiet small" data-act="askdel" ${a}>احذفها</button></div>
-      ${S.confirm===i.id?confirmHTML(i):''}</li>`};
+  const dRow=decRow;
   return `<div class="rvw">
     ${sumH}
-    <h3 class="rvw-h">تحتاج قرارًا <span class="num">${nd.length||''}</span></h3>
-    ${nd.length?listHTML('rvw',nd,dRow,3):'<p class="empty">لا شيء معلّق. أسبوعك نظيف.</p>'}
+    ${nd.length?`<p class="empty">${nd.length===1?'عنصر واحد ينتظر':nd.length===2?'عنصران ينتظران':nd.length+' عناصر تنتظر'} قرارك في «تحتاج قرارك» أعلى الصفحة. <button class="btn quiet small" data-act="jump" data-v="late">اذهب إليها</button></p>`:'<p class="empty">لا شيء معلّق. أسبوعك نظيف.</p>'}
     ${dl.length?`<h3 class="rvw-h">يومًا بيوم</h3><div class="ldays">${Object.keys(byDay).sort().reverse().map(dayH).join('')}</div>`:''}
   </div>`;
 }
@@ -1731,7 +1732,9 @@ function renderMain(){
   const tasksAll=open.filter(i=>i.type!=='meeting');
   const attT=tasksAll.filter(i=>!isWaiting(i)&&!isTop(i)&&taskState(i).k==='late').sort(sortTasks);
   const attW=tasksAll.filter(i=>isWaiting(i)&&['late','today'].includes(waitState(i).k)).sort((a,b)=>waitState(a).o-waitState(b).o);
-  const attIds=new Set([...attT,...attW].map(i=>i.id));
+  /* الراكد (أُجّل كثيرًا، بلا يوم، كبيرة لم تتحرك) يُحسم هنا أيضًا: مكان واحد لكل القرارات */
+  const attS=needsDecision(open).filter(([i])=>!isTop(i)&&!vacHide(i)),whyS=new Map(attS.map(([i,w])=>[i.id,w]));
+  const attIds=new Set([...attT,...attW,...attS.map(x=>x[0])].map(i=>i.id));
   /* ONE HOME per item. Precedence: attention → top-3 → today's plan → waiting → upcoming (next 7 days) → size lists → later. Every section below excludes what an earlier one owns. */
   const upWhen=i=>{let d=null,tm='98';if(i.due&&!(i.remindDate&&i.remindTime&&i.remindDate<i.due)){d=i.due;tm=i.dueTime||'98'}else if(i.remindDate&&i.remindTime){d=i.remindDate;tm=i.remindTime;const wd=(i.days||[]).filter(x=>x>=t).sort()[0];if(wd&&wd<d){d=wd;tm='98'}}else d=(i.days||[]).filter(x=>x>=t).sort()[0]||null;if((i.days||[]).includes(t))d=t;return[d,tm]};
   const e6u=addDays(t,6);const upT=tasksAll.filter(i=>!vacHide(i)&&!isWaiting(i)&&!isTop(i)&&!attIds.has(i.id)&&!tdIds.has(i.id)).map(i=>[i,upWhen(i)]).filter(([i,w])=>w[0]&&w[0]>t&&w[0]<=e6u);
@@ -1740,7 +1743,7 @@ function renderMain(){
   const pmRow=i=>{const a=`data-id="${i.id}"`;const ad=adviceFor(i);const alt=ad.act==='close'?['mtg-follow','أضف متابعة']:['mtg-close','لا، أغلقه'];return `<li class="drow pm-q e-${i.entity}"><span class="t">${esc(i.title)}</span><span class="why">انتهى ${esc(fmtDay(i.date))}</span>${advHTML(i)}<div class="btns"><button class="btn quiet small" data-act="${alt[0]}" ${a}>${alt[1]}</button></div></li>`};
   const attRow=i=>{const r=(isWaiting(i)?waitRow(i):taskRow(i)).replace(/<button class="btn quiet small" data-act="postpone"[^>]*>أجّل لبكرة<\/button>/,'');const j=r.lastIndexOf('</li>');return r.slice(0,j)+advHTML(i)+r.slice(j)};
   const attN=attIds.size+pastM.length;
-  if(attN)h+=`<section class="sec att" id="sec-att"><h2 class="sec-h">تحتاج قرارك <span class="cnt num">${attN}</span></h2>${listHTML('att',[...pastM,...attT,...attW],i=>pastM.includes(i)?pmRow(i):attRow(i),2)}</section>`;
+  if(attN)h+=`<section class="sec att" id="sec-att"><h2 class="sec-h">تحتاج قرارك <span class="cnt num">${attN}</span></h2>${listHTML('att',[...pastM,...attT,...attW,...attS.map(x=>x[0])],i=>pastM.includes(i)?pmRow(i):whyS.has(i.id)?decRow([i,whyS.get(i.id)]):attRow(i),2)}</section>`;
   if(attN)setTimeout(()=>analyzeAttention([...pastM,...attT,...attW]),0);
   if(S.sample&&!S.wkBusy)setTimeout(analyzeWork,800);
   const tasks=tasksAll.filter(i=>!isWaiting(i));
@@ -1792,11 +1795,11 @@ function renderMain(){
     h+=`<section class="sec" id="sec-cal"><h2 class="sec-h">التقويم</h2>${calendarHTML()}</section>`;
 
     const ndn=needsDecision(open).length;
-    h+=`<section class="sec" id="sec-review"><button class="fold" data-act="review-toggle" aria-expanded="${S.reviewOpen}">${I.chev}مراجعة الأسبوع <span class="num" style="font-family:var(--f-body);font-weight:500;font-size:13px;color:${ndn?'var(--late)':'var(--faint)'}">${ndn?ndn+' تحتاج قرارًا':''}</span></button>${S.reviewOpen?reviewHTML(all,open):''}</section>`;
+    h+=`<section class="sec" id="sec-review"><button class="fold" data-act="review-toggle" aria-expanded="${S.reviewOpen}">${I.chev}مراجعة الأسبوع <span class="num" style="font-family:var(--f-body);font-weight:500;font-size:13px;color:${ndn?'var(--late)':'var(--faint)'}"></span></button>${S.reviewOpen?reviewHTML(all,open):''}</section>`;
   }
   h+=`<section class="sec"><h2 class="sec-h">بياناتك</h2>
     ${S.imp?`<div class="confirm" style="background:var(--brand-tint)"><p style="color:var(--fg)">تستورد ${S.imp.length} عنصرًا؟ العناصر الموجودة بالرقم نفسه تُستبدل.</p><div><button class="btn primary small" data-act="imp-yes">استورد</button><button class="btn quiet small" data-act="imp-no">تراجع</button></div></div>`:''}
-    <div class="data-row">${S.dl?`<button class="btn quiet small" data-act="exp-csv">تصدير Excel</button><button class="btn quiet small" data-act="exp-json">نسخة احتياطية</button>`:''}<button class="btn quiet small" data-act="imp">استيراد نسخة</button></div><div class="data-row" style="margin-top:8px"><button class="btn quiet small" data-act="tools" aria-pressed="${!!S.toolsOn}">${S.toolsOn?'أخفِ مؤقت الوقت وأهم 3':'أظهر مؤقت الوقت وأهم 3'}</button></div>${window.DaftarCalHTML?window.DaftarCalHTML():''}${window.DaftarWidgetHTML?window.DaftarWidgetHTML():''}<p style="margin:10px 0 0;font-size:12px;color:var(--faint)">تحديث الصفحة: 26 نوفمبر 2026، 7:15 م · الإصدار v18</p></section>`;
+    <div class="data-row">${S.dl?`<button class="btn quiet small" data-act="exp-csv">تصدير Excel</button><button class="btn quiet small" data-act="exp-json">نسخة احتياطية</button>`:''}<button class="btn quiet small" data-act="imp">استيراد نسخة</button></div><div class="data-row" style="margin-top:8px"><button class="btn quiet small" data-act="tools" aria-pressed="${!!S.toolsOn}">${S.toolsOn?'أخفِ مؤقت الوقت وأهم 3':'أظهر مؤقت الوقت وأهم 3'}</button></div>${window.DaftarCalHTML?window.DaftarCalHTML():''}${window.DaftarWidgetHTML?window.DaftarWidgetHTML():''}<p style="margin:10px 0 0;font-size:12px;color:var(--faint)">تحديث الصفحة: 26 نوفمبر 2026، 7:25 م · الإصدار v19</p></section>`;
   m.innerHTML=h;
 }
 function growTitles(){document.querySelectorAll('textarea.title-in').forEach(t=>{t.style.height='auto';t.style.height=t.scrollHeight+2+'px'})}
@@ -1964,6 +1967,7 @@ document.addEventListener('click',async e=>{
     case 'more':S.expand[v]=true;render();break;case 'less':S.expand[v]=false;render();break;
     case 'q-clear':S.q='';render();break;
     case 'postpone':postpone(id);break;
+    case 'rv-ok':{const it=get(id);if(it){it.rvOk=today();it.pAck=it.postponed||0;persist(it);note('أبقيتها كما هي، ولن تُسأل عنها هذا الأسبوع.',4000)}break}
     case 'rv-postpone':{postpone(id);const it=get(id);if(it){it.rvOk=today();it.pAck=it.postponed||0;persist(it)}break}
     case 'top':toggleTop(id);break;
     case 'delegate':S.forceWait=true;S.editId=null;openEditor(id);setTimeout(()=>{const r=document.getElementById('row-'+id);if(r)r.scrollIntoView({block:'center'});const n=document.getElementById('e-wf-'+id);if(n)n.focus({preventScroll:true})},0);break;
