@@ -333,12 +333,16 @@
       setWk(false); toast('فُصل الودجت عن الدفتر.');
     } catch (_) { toast('تعذّر الفصل الآن.'); }
   }
+  /* النسخ بالطريقة المتزامنة أولًا (أضمن على الآيفون)، ثم واجهة الحافظة */
   async function wkCopy() {
-    try { await navigator.clipboard.writeText(wkShow); toast('✓ نُسخ الرمز. الصقه في Scriptable.'); }
-    catch (_) { const i = document.getElementById('wk-key'); if (i) { i.focus(); i.select(); } toast('حدّد الرمز وانسخه.'); }
+    const i = document.getElementById('wk-key');
+    let ok = false;
+    if (i) { try { i.removeAttribute('readonly'); i.focus(); i.setSelectionRange(0, i.value.length); ok = document.execCommand('copy'); } catch (_) {} i.setAttribute('readonly', ''); i.blur(); }
+    if (!ok) { try { await navigator.clipboard.writeText(wkShow); ok = true; } catch (_) {} }
+    toast(ok ? '✓ نُسخ الرمز. الصقه في Scriptable.' : 'تعذّر النسخ. استعمل زر «اربط في Scriptable».');
   }
   window.DaftarWidgetHTML = () => {
-    if (wkShow) return `<div class="confirm" style="background:var(--brand-tint);margin-top:8px"><p style="color:var(--fg)">رمز ربط الودجت (يظهر مرة واحدة). انسخه، ثم افتح Scriptable وشغّل سكربت «مواعيد اليوم» والصقه.</p><input id="wk-key" readonly dir="ltr" value="${wkShow}" style="width:100%;box-sizing:border-box;font:13px ui-monospace,monospace;padding:8px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--fg)"><div><button class="btn primary small" data-wk="copy">انسخ الرمز</button><button class="btn quiet small" data-wk="done">تم</button></div></div>`;
+    if (wkShow) return `<div class="confirm" style="background:var(--brand-tint);margin-top:8px"><p style="color:var(--fg)">اضغط «اربط في Scriptable» فيفتح Scriptable ويحفظ الرمز وحده. وإن لم يفتح: انسخ الرمز وشغّل «مواعيد اليوم» والصقه.</p><input id="wk-key" readonly dir="ltr" value="${wkShow}" style="width:100%;box-sizing:border-box;font:13px ui-monospace,monospace;padding:8px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--fg)"><div><a class="btn primary small" style="text-decoration:none" href="scriptable:///run/${encodeURIComponent('مواعيد اليوم')}?key=${wkShow}">اربط في Scriptable</a><button class="btn quiet small" data-wk="copy">انسخ الرمز</button><button class="btn quiet small" data-wk="done">تم</button></div></div>`;
     if (wk) return `<div class="data-row" style="margin-top:8px;align-items:center"><span style="font-size:13px;color:var(--muted)">✓ ودجت الآيفون مربوط</span><button class="btn quiet small" data-wk="new">رمز جديد</button><button class="btn quiet small" data-wk="off">افصل</button></div>`;
     return `<div class="data-row" style="margin-top:8px"><button class="btn quiet small" data-wk="on">اربط ودجت الآيفون</button></div>`;
   };
