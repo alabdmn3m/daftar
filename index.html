@@ -714,8 +714,23 @@ function repStep(k,f,day){if(f==='d')return addDays(k,1);if(f==='w')return addDa
 function repTxt(it){const f=repF(it);if(!f)return'';const a=repAnchor(it),g=a?fromIso(a):null;if(f==='d')return 'يوميًا';if(f==='w')return g?`أسبوعيًا كل ${DAYS[g.getDay()]}`:'أسبوعيًا';if(f==='m')return `شهريًا يوم ${(it.rep&&it.rep.d)||(g?g.getDate():'')}`;return g?`سنويًا ${g.getDate()} ${MONTHS[g.getMonth()]}`:'سنويًا'}
 function repSet(it,f,keep){if(!f){it.rep=null;return}const a=repAnchor(it);it.rep={f};if(f==='m'||f==='y')it.rep.d=keep&&keep.f===f&&keep.d?keep.d:(a?fromIso(a).getDate():null)}
 function occIn(it,a,b){const f=repF(it),k0=repAnchor(it);if(!k0)return[];if(!f||it.status==='done')return k0>=a&&k0<=b?[k0]:[];const out=[];let k=k0,n=0;while(k<=b&&n++<1200){if(k>=a)out.push(k);k=repStep(k,f,it.rep.d)}return out}
+/* يوم الدورة الحالية لمتكررة لا تاريخ لها: الشهرية يوم d من هذا الشهر، والسنوية اليوم نفسه، والباقي اليوم */
+function repBase(it,t){const f=repF(it),d=it.rep&&it.rep.d,g=fromIso(t);if(f==='m'&&d)return isoOf(new Date(g.getFullYear(),g.getMonth(),Math.min(d,new Date(g.getFullYear(),g.getMonth()+1,0).getDate())));return t}
+/* إصلاح ما سبق: متكررة بلا تاريخ تأخذ تاريخ دورتها التالية، ونسخ الإنجاز المكررة لنفس الدورة في اليوم نفسه تُدمج في واحدة */
+function repRepair(){const t=today(),fix=[],drop=[];
+  for(const it of S.items.values()){if(it.type==='meeting'||it.status==='done'||!repF(it)||it.due||it.remindDate)continue;
+    const doneHere=[...S.items.values()].some(c=>c.recOf===it.id&&c.doneAt&&isoOf(new Date(c.doneAt))>=repBase(it,t));
+    let k=repBase(it,t);if(doneHere){let n=0;do{k=repStep(k,it.rep.f,it.rep.d)}while(k<=t&&n++<1200)}
+    if(it.remindTime)it.remindDate=k;else it.due=k;fix.push(it)}
+  const seen=new Map();[...S.items.values()].filter(c=>c.recOf&&c.status==='done'&&c.doneAt&&c.type!=='meeting').sort((a,b)=>a.doneAt-b.doneAt).forEach(c=>{const key=c.recOf+'|'+isoOf(new Date(c.doneAt));if(seen.has(key))drop.push(c.id);else seen.set(key,1)});
+  fix.forEach(persist);drop.forEach(removeItem);return fix.length+drop.length}
 function repRoll(id){
-  const it=get(id);if(!it||!repF(it)||it.status==='done')return null;const snap=JSON.parse(JSON.stringify(it)),t=today();
+  const it=get(id);if(!it||!repF(it)||it.status==='done')return null;
+  /* ضغطتان متتاليتان على المهمة نفسها تُحسبان إنجازًا واحدًا */
+  S.rollAt=S.rollAt||{};if(Date.now()-(S.rollAt[id]||0)<4000)return null;S.rollAt[id]=Date.now();
+  const snap=JSON.parse(JSON.stringify(it)),t=today();
+  /* متكررة بلا تاريخ تبدأ منه: يُشتق يوم هذه الدورة من قاعدة التكرار، وإلا لا ينتقل إنجازها للدورة التالية فتبقى مكانها */
+  if(it.type!=='meeting'&&!it.due&&!it.remindDate){const k=repBase(it,t);if(it.remindTime)it.remindDate=k;else it.due=k}
   const copy=Object.assign(JSON.parse(JSON.stringify(it)),{id:newId(),rep:null,recOf:it.id,calEventId:null,calStatus:null,calError:null,status:'done',mtgClosed:it.type==='meeting',
     doneAt:it.type==='meeting'?(new Date(`${it.date}T${it.time||'12:00'}`).getTime()||Date.now()):Date.now()});
   if(copy.runningSince){accrue(copy,Date.now());copy.runningSince=null}
@@ -2203,7 +2218,7 @@ async function connectOnce(){
     try{S.meta=db.collection('data/users/'+uid+'/meta/kv');S.meta.onSnapshot(sn=>{sn.docs.forEach(d=>{if(d.id==='review'&&d.exists){const v=(d.data()||{}).seen;if(v&&v!==S.revSeen){S.revSeen=v;render()}}if(d.id==='hint'&&d.exists&&(d.data()||{}).off&&!S.hintOff){S.hintOff=true;render()}if(d.id==='tools'&&d.exists){const on=!!(d.data()||{}).on;if(on!==!!S.toolsOn){S.toolsOn=on;render()}}if(d.id==='calq'&&d.exists){const q=(d.data()||{}).ids||[];if(!S.calqLoaded){S.calqLoaded=1;S.calq=[...new Set([...(S.calq||[]),...q])];setTimeout(calRetry,1500)}}})},()=>{})}catch(_){S.meta=null}
     S.col.onSnapshot(snap=>{
       const m=new Map(),vm=new Map();snap.docs.forEach(d=>{if(d.exists){const o=JSON.parse(JSON.stringify(d.data()));o.id=d.id;(o.type==='vacation'?vm:m).set(d.id,o)}});
-      obOverlay(m,vm);S.vacs=vm;S.items=m;S.ready=true;S.fromCache=0;S.net='ok';render();cacheSave();netUI();obFlush();if(!S.updRetried){S.updRetried=1;setTimeout(()=>{calLost();calRetry()},1500)}
+      obOverlay(m,vm);S.vacs=vm;S.items=m;S.ready=true;S.fromCache=0;S.net='ok';if(!S.repFixed){S.repFixed=1;try{repRepair()}catch(_){}}render();cacheSave();netUI();obFlush();if(!S.updRetried){S.updRetried=1;setTimeout(()=>{calLost();calRetry()},1500)}
     },err=>{S.ready=true;render();if(err&&err.code==='revoked')note('انقطع الوصول إلى بياناتك. أعد فتح الصفحة.');else if(S.items.size){S.net='off';netUI()}else note('تعذّر تحميل بياناتك. أعد فتح الصفحة.')});
     obFlush();
   }else{S.ready=true;render();if(S.items.size||OB.map.size){S.net='off';netUI()}else if(navigator.onLine===false){S.net='off';netUI()}else if(!S.loginNoted){S.loginNoted=1;0}}
