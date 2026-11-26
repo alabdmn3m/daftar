@@ -405,14 +405,17 @@
        لا تُعاد أثناء الكتابة أو والمحرّر مفتوح أو عناصر بانتظار المراجعة؛ تنتظر إلى أن يفرغ أو يُغلق التطبيق. */
     const busy = () => authNet.busy > 0 || Date.now() - authNet.last < 3000 || !!document.querySelector('input:focus, textarea:focus, select:focus, [data-act="e-save"], #review [data-act="p-add"]');
     let reloading = false;
+    /* بعد إعادة التحميل يُقال للمستخدم إن التحديث وصل، فلا يحتاج أن يغلق ويفتح ليتأكد */
+    function markUpdated() { try { sessionStorage.setItem('daftar-updated', '1'); } catch (_) {} }
+    try { if (sessionStorage.getItem('daftar-updated')) { sessionStorage.removeItem('daftar-updated'); setTimeout(() => toast('✓ وصل تحديث جديد للدفتر'), 900); } } catch (_) {}
     const reloadSoon = () => {
       if (reloading) return;
       if (busy()) { setTimeout(reloadSoon, 4000); return; }
-      reloading = true; location.reload();
+      reloading = true; markUpdated(); location.reload();
     };
     navigator.serviceWorker.addEventListener('controllerchange', () => {
       if (!hadSW) return; // أول تثبيت: الصفحة جديدة أصلًا
-      if (document.visibilityState === 'hidden' && authNet.busy === 0) { reloading = true; location.reload(); } else reloadSoon();
+      if (document.visibilityState === 'hidden' && authNet.busy === 0) { reloading = true; markUpdated(); location.reload(); } else reloadSoon();
     });
   } else offlineStatus(false);
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
