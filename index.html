@@ -1769,7 +1769,7 @@ function renderMain(){
   }
   h+=`<section class="sec"><h2 class="sec-h">بياناتك</h2>
     ${S.imp?`<div class="confirm" style="background:var(--brand-tint)"><p style="color:var(--fg)">تستورد ${S.imp.length} عنصرًا؟ العناصر الموجودة بالرقم نفسه تُستبدل.</p><div><button class="btn primary small" data-act="imp-yes">استورد</button><button class="btn quiet small" data-act="imp-no">تراجع</button></div></div>`:''}
-    <div class="data-row">${S.dl?`<button class="btn quiet small" data-act="exp-csv">تصدير Excel</button><button class="btn quiet small" data-act="exp-json">نسخة احتياطية</button>`:''}<button class="btn quiet small" data-act="imp">استيراد نسخة</button></div><div class="data-row" style="margin-top:8px"><button class="btn quiet small" data-act="tools" aria-pressed="${!!S.toolsOn}">${S.toolsOn?'أخفِ مؤقت الوقت وأهم 3':'أظهر مؤقت الوقت وأهم 3'}</button></div>${window.DaftarCalHTML?window.DaftarCalHTML():''}<p style="margin:10px 0 0;font-size:12px;color:var(--faint)">تحديث الصفحة: 15 نوفمبر، 3:35 م</p></section>`;
+    <div class="data-row">${S.dl?`<button class="btn quiet small" data-act="exp-csv">تصدير Excel</button><button class="btn quiet small" data-act="exp-json">نسخة احتياطية</button>`:''}<button class="btn quiet small" data-act="imp">استيراد نسخة</button></div><div class="data-row" style="margin-top:8px"><button class="btn quiet small" data-act="tools" aria-pressed="${!!S.toolsOn}">${S.toolsOn?'أخفِ مؤقت الوقت وأهم 3':'أظهر مؤقت الوقت وأهم 3'}</button></div>${window.DaftarCalHTML?window.DaftarCalHTML():''}${window.DaftarWidgetHTML?window.DaftarWidgetHTML():''}<p style="margin:10px 0 0;font-size:12px;color:var(--faint)">تحديث الصفحة: 15 نوفمبر، 3:35 م</p></section>`;
   m.innerHTML=h;
 }
 function growTitles(){document.querySelectorAll('textarea.title-in').forEach(t=>{t.style.height='auto';t.style.height=t.scrollHeight+2+'px'})}
@@ -1794,7 +1794,7 @@ function watchRun(){
 function anchorKeep(fn){const key=x=>x.id||((x.querySelector('h2')||{}).textContent||'').replace(/[0-9\u0660-\u0669/]+/g,'').trim();let ak=null,at=0;
   if(scrollY>20)for(const x of document.querySelectorAll('#main > section, #main > .tgrp > section')){const r=x.getBoundingClientRect(),kk=key(x);if(r.bottom>0&&kk&&getComputedStyle(x).position==='static'){ak=kk;at=r.top;break}}
   fn();requestAnimationFrame(()=>{const mx=Math.max(0,document.documentElement.scrollHeight-innerHeight);if(scrollY>mx+1)window.scrollTo(0,mx);window.__navPin&&window.__navPin()});if(!ak)return;const n=[...document.querySelectorAll('#main > section, #main > .tgrp > section')].find(x=>key(x)===ak);if(n){const d=n.getBoundingClientRect().top-at;if(Math.abs(d)>1)window.scrollBy(0,d)}}
-function render(){document.body.classList.toggle('notools',!S.toolsOn);keepFocus(()=>anchorKeep(()=>{renderHeader();renderMain()}));watchRun()}
+function render(){document.body.classList.toggle('notools',!S.toolsOn);keepFocus(()=>anchorKeep(()=>{renderHeader();renderMain()}));watchRun();window.DaftarWidgetSync&&window.DaftarWidgetSync()}
 
 /* ---------- actions ---------- */
 function anchored(id,fn){const el=document.getElementById('row-'+id);const y=el?el.getBoundingClientRect().top:null;fn();if(y==null)return;const n=document.getElementById('row-'+id);if(n){const d=n.getBoundingClientRect().top-y;if(Math.abs(d)>2)window.scrollBy(0,d)}}
@@ -2209,6 +2209,26 @@ async function connectOnce(){
   }else{S.ready=true;render();if(S.items.size||OB.map.size){S.net='off';netUI()}else if(navigator.onLine===false){S.net='off';netUI()}else if(!S.loginNoted){S.loginNoted=1;0}}
 }
 window.addEventListener('daftar-rerender',()=>{try{render()}catch(_){}});
+window.DaftarWidgetFeed=function(){
+  if (!S.ready) return null;
+  const t = today(), days = {};
+  for (let i = 0; i < 7; i++) {
+    const k = addDays(t, i), list = [];
+    for (const it of S.items.values()) {
+      if (it.type === 'meeting' || it.type === 'vacation' || it.status === 'done') continue;
+      const rep = repF(it) && repAnchor(it) && k > repAnchor(it) && occIn(it, k, k).length;
+      const hit = (it.days || []).includes(k) || it.due === k || it.remindDate === k || (isWaiting(it) && it.followUp === k) || rep;
+      if (!hit) continue;
+      let tm = null, kind = 'task';
+      if (it.remindTime && (it.remindDate === k || (rep && !it.due))) { tm = it.remindTime; kind = 'rem'; }
+      else if (it.due === k && it.dueTime) { tm = it.dueTime; kind = 'due'; }
+      if (tm && tzOf(it) !== DEV_TZ) { const r = toTz(k, tm, tzOf(it), DEV_TZ); if (r[0] === k) tm = r[1]; }
+      list.push({ t: it.title, e: ENT[it.entity] ? it.entity : 'personal', k: kind, tm });
+    }
+    if (list.length) days[k] = list.sort((a, b) => (a.tm || '99') < (b.tm || '99') ? -1 : 1);
+  }
+  return { v: 1, days };
+};
 boot();
 })();
 </script>

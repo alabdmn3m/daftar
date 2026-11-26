@@ -6,6 +6,27 @@ import pathlib, sys
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 src = (ROOT / 'src' / 'notebook.html').read_text(encoding='utf-8')
 
+WIDGET_FEED = r'''window.DaftarWidgetFeed=function(){
+  if (!S.ready) return null;
+  const t = today(), days = {};
+  for (let i = 0; i < 7; i++) {
+    const k = addDays(t, i), list = [];
+    for (const it of S.items.values()) {
+      if (it.type === 'meeting' || it.type === 'vacation' || it.status === 'done') continue;
+      const rep = repF(it) && repAnchor(it) && k > repAnchor(it) && occIn(it, k, k).length;
+      const hit = (it.days || []).includes(k) || it.due === k || it.remindDate === k || (isWaiting(it) && it.followUp === k) || rep;
+      if (!hit) continue;
+      let tm = null, kind = 'task';
+      if (it.remindTime && (it.remindDate === k || (rep && !it.due))) { tm = it.remindTime; kind = 'rem'; }
+      else if (it.due === k && it.dueTime) { tm = it.dueTime; kind = 'due'; }
+      if (tm && tzOf(it) !== DEV_TZ) { const r = toTz(k, tm, tzOf(it), DEV_TZ); if (r[0] === k) tm = r[1]; }
+      list.push({ t: it.title, e: ENT[it.entity] ? it.entity : 'personal', k: kind, tm });
+    }
+    if (list.length) days[k] = list.sort((a, b) => (a.tm || '99') < (b.tm || '99') ? -1 : 1);
+  }
+  return { v: 1, days };
+};'''
+
 PATCHES = [
   # بلا إنترنت: الفهم المحلي فورًا بدل انتظار خطأ الشبكة
   ("if(!S.sample){S.pending=localParse(text)",
@@ -24,9 +45,13 @@ PATCHES = [
   ("note('سجّل الدخول إلى Claude ليُحفظ دفترك في حسابك.')", "0"),
   # زر ربط التقويم في «بياناتك»
   ("<p style=\"margin:10px 0 0;font-size:12px;color:var(--faint)\">تحديث الصفحة:",
-   "${window.DaftarCalHTML?window.DaftarCalHTML():''}<p style=\"margin:10px 0 0;font-size:12px;color:var(--faint)\">تحديث الصفحة:"),
+   "${window.DaftarCalHTML?window.DaftarCalHTML():''}${window.DaftarWidgetHTML?window.DaftarWidgetHTML():''}<p style=\"margin:10px 0 0;font-size:12px;color:var(--faint)\">تحديث الصفحة:"),
+  # ودجت الآيفون: تُحدَّث قائمة مهامه بعد كل رسم
+  ("watchRun()}", "watchRun();window.DaftarWidgetSync&&window.DaftarWidgetSync()}"),
   # يعيد الجسر رسم الدفتر حين تتغير حالة الربط
   ("\nboot();\n", "\nwindow.addEventListener('daftar-rerender',()=>{try{render()}catch(_){}});\nboot();\n"),
+  # ودجت الآيفون: مهام الأيام السبعة القادمة بوقتها (التذكير أو التسليم)
+  ("\nboot();\n", "\n"+WIDGET_FEED+"\nboot();\n"),
   ("const n=OB.map.size,off=S.net==='off'||navigator.onLine===false;let t='',k='';",
    "const n=OB.map.size,off=S.net==='off'||navigator.onLine===false;let t='',k='';if(!off)S.offShown=0;"),
   ("""  if(off&&n)t=`غير متصل · ${n===1?'تعديل واحد محفوظ':n===2?'تعديلان محفوظان':n+' تعديلات محفوظة'} على جوالك ويُرسل تلقائيًا`,k='off';

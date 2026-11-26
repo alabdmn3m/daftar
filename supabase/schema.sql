@@ -40,3 +40,24 @@ create table if not exists public.gcal_tokens (
 );
 alter table public.gcal_tokens enable row level security;
 revoke all on public.gcal_tokens from anon, authenticated;
+
+-- ---------- ودجت الآيفون: رمز للقراءة فقط ----------
+-- الدفتر يحفظ بصمة الرمز (لا الرمز نفسه)، والودجت يرسل الرمز فيعود له صف meta «widget» وحده.
+create table if not exists public.widget_keys (
+  user_id uuid primary key default auth.uid() references auth.users on delete cascade,
+  key_hash text not null unique,
+  created_at timestamptz not null default now()
+);
+alter table public.widget_keys enable row level security;
+create policy "own widget key" on public.widget_keys for all
+  using (user_id = auth.uid()) with check (user_id = auth.uid());
+
+create or replace function public.widget_feed(k text) returns jsonb
+language sql stable security definer set search_path = public as $$
+  select m.data from public.widget_keys w
+  join public.meta m on m.user_id = w.user_id and m.key = 'widget'
+  where length(k) >= 32 and w.key_hash = encode(sha256(convert_to(k, 'UTF8')), 'hex')
+  limit 1;
+$$;
+revoke all on function public.widget_feed(text) from public;
+grant execute on function public.widget_feed(text) to anon, authenticated;

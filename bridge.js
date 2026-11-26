@@ -285,6 +285,70 @@
     e.preventDefault(); e.stopPropagation();
     if (b.dataset.gcal === 'on') calConnect(); else calDisconnect();
   }, true);
+  /* ---------- ودجت الآيفون: قائمة مهام الأيام السبعة القادمة يقرؤها الودجت برمز للقراءة فقط ---------- */
+  /* القائمة يبنيها الدفتر نفسه (window.DaftarWidgetFeed في build.py) لأن بياناته داخل نطاقه */
+  const widgetFeed = () => { try { return window.DaftarWidgetFeed ? window.DaftarWidgetFeed() : null; } catch (_) { return null; } };
+  let wfBusy = false, wfTimer = 0;
+  async function widgetPush() {
+    if (wfBusy || navigator.onLine === false || !storedUid()) return;
+    const f = widgetFeed(); if (!f) return;
+    const s = JSON.stringify(f);
+    let last = ''; try { last = localStorage.getItem('daftar-widget-sent') || ''; } catch (_) {}
+    if (s === last) return;
+    wfBusy = true;
+    try {
+      const session = await liveSession();
+      const res = await sb.from('meta').upsert({ user_id: session.user.id, key: 'widget', data: f }, { onConflict: 'user_id,key' });
+      if (!res.error) { try { localStorage.setItem('daftar-widget-sent', s); } catch (_) {} }
+    } catch (_) {} finally { wfBusy = false; }
+  }
+  window.DaftarWidgetSync = () => { clearTimeout(wfTimer); wfTimer = setTimeout(widgetPush, 2000); };
+  setInterval(() => { if (document.visibilityState === 'visible') widgetPush(); }, 60000);
+
+  let wk = (() => { try { return localStorage.getItem('daftar-widget-linked') === '1'; } catch (_) { return false; } })();
+  let wkShow = '';
+  const setWk = (on, show) => { wk = on; wkShow = show || ''; try { localStorage.setItem('daftar-widget-linked', on ? '1' : '0'); } catch (_) {} rerender(); };
+  async function sha256(s) {
+    const b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
+    return [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, '0')).join('');
+  }
+  async function wkLink() {
+    if (navigator.onLine === false) return toast('الربط يحتاج الإنترنت.');
+    const a = new Uint8Array(24); crypto.getRandomValues(a);
+    const key = [...a].map(x => x.toString(16).padStart(2, '0')).join('');
+    try {
+      const session = await liveSession();
+      const res = await sb.from('widget_keys').upsert({ user_id: session.user.id, key_hash: await sha256(key) }, { onConflict: 'user_id' });
+      if (res.error) throw res.error;
+      try { localStorage.removeItem('daftar-widget-sent'); } catch (_) {}
+      setWk(true, key); widgetPush();
+    } catch (_) { toast('تعذّر إنشاء رمز الربط. جرّب بعد قليل.'); }
+  }
+  async function wkUnlink() {
+    if (!confirm('تفصل ودجت الآيفون عن الدفتر؟ تختفي المهام منه وتبقى المواعيد.')) return;
+    try {
+      const session = await liveSession();
+      const res = await sb.from('widget_keys').delete().eq('user_id', session.user.id);
+      if (res.error) throw res.error;
+      setWk(false); toast('فُصل الودجت عن الدفتر.');
+    } catch (_) { toast('تعذّر الفصل الآن.'); }
+  }
+  async function wkCopy() {
+    try { await navigator.clipboard.writeText(wkShow); toast('✓ نُسخ الرمز. الصقه في Scriptable.'); }
+    catch (_) { const i = document.getElementById('wk-key'); if (i) { i.focus(); i.select(); } toast('حدّد الرمز وانسخه.'); }
+  }
+  window.DaftarWidgetHTML = () => {
+    if (wkShow) return `<div class="confirm" style="background:var(--brand-tint);margin-top:8px"><p style="color:var(--fg)">رمز ربط الودجت (يظهر مرة واحدة). انسخه، ثم افتح Scriptable وشغّل سكربت «مواعيد اليوم» والصقه.</p><input id="wk-key" readonly dir="ltr" value="${wkShow}" style="width:100%;box-sizing:border-box;font:13px ui-monospace,monospace;padding:8px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--fg)"><div><button class="btn primary small" data-wk="copy">انسخ الرمز</button><button class="btn quiet small" data-wk="done">تم</button></div></div>`;
+    if (wk) return `<div class="data-row" style="margin-top:8px;align-items:center"><span style="font-size:13px;color:var(--muted)">✓ ودجت الآيفون مربوط</span><button class="btn quiet small" data-wk="new">رمز جديد</button><button class="btn quiet small" data-wk="off">افصل</button></div>`;
+    return `<div class="data-row" style="margin-top:8px"><button class="btn quiet small" data-wk="on">اربط ودجت الآيفون</button></div>`;
+  };
+  document.addEventListener('click', e => {
+    const b = e.target.closest && e.target.closest('[data-wk]'); if (!b) return;
+    e.preventDefault(); e.stopPropagation();
+    const a = b.dataset.wk;
+    if (a === 'on' || a === 'new') wkLink(); else if (a === 'off') wkUnlink(); else if (a === 'copy') wkCopy(); else if (a === 'done') { wkShow = ''; rerender(); }
+  }, true);
+
   function rerender() { try { window.dispatchEvent(new Event('daftar-rerender')); } catch (_) {} }
   /* العودة من Google */
   const GC = (location.hash.match(/gcal=([a-z-]+)/) || [])[1];
