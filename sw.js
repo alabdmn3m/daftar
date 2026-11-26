@@ -1,7 +1,7 @@
 /* دفتر المهام — عامل الخدمة: يحفظ ملفات التطبيق على الجوال ليفتح بلا إنترنت.
    ملفات التطبيق: من الحفظ أولًا ثم تُحدَّث في الخلفية. طلبات البيانات (Supabase): تمر للشبكة دائمًا.
    الأساسية تُحفظ كلها أو لا شيء؛ الخطوط والأيقونات كلٌّ على حدة، فلا يُفشل ملفٌّ واحد الحفظ كله. */
-const VERSION = 'daftar-v17';
+const VERSION = 'daftar-v18';
 const CORE = ['./', 'index.html', 'bridge.js', 'config.js', 'supabase.js'];
 const EXTRA = ['manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'icon-maskable-512.png', 'apple-touch-icon.png',
   ...['arabic', 'latin'].flatMap(s => [400, 500, 600, 700].map(w => `fonts/ibm-plex-sans-arabic-${s}-${w}-normal.woff2`))];
