@@ -27,7 +27,16 @@ WIDGET_FEED = r'''window.DaftarWidgetFeed=function(){
   return { v: 1, days };
 };'''
 
+# تاريخ آخر تحديث يُكتب عند البناء (بتوقيت الرياض) مع رقم الإصدار، بدل تاريخ الدفتر القديم الثابت
+import datetime, re
+_now = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=3)))
+_MON = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر']
+_h = _now.hour % 12 or 12
+_ver = re.search(r"daftar-(v\d+)", (ROOT / 'sw.js').read_text(encoding='utf-8')).group(1)
+STAMP = f"{_now.day} {_MON[_now.month-1]} {_now.year}، {_h}:{_now.minute:02d} {'ص' if _now.hour < 12 else 'م'} · الإصدار {_ver}"
+
 PATCHES = [
+  ("15 نوفمبر، 3:35 م</p>", STAMP + "</p>"),
   # بلا إنترنت: الفهم المحلي فورًا بدل انتظار خطأ الشبكة
   ("if(!S.sample){S.pending=localParse(text)",
    "if(!S.sample||navigator.onLine===false){S.pending=localParse(text)"),
