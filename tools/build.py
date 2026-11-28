@@ -60,7 +60,7 @@ PATCHES = [
   # يعيد الجسر رسم الدفتر حين تتغير حالة الربط
   ("\nboot();\n", "\nwindow.addEventListener('daftar-rerender',()=>{try{render()}catch(_){}});\nboot();\n"),
   # ودجت الآيفون: مهام الأيام السبعة القادمة بوقتها (التذكير أو التسليم)
-  ("\nboot();\n", "\n"+WIDGET_FEED+"\nboot();\n"),
+  ("\nboot();\n", "\n"+WIDGET_FEED+"\n/* للاختبار المحلي فقط: لا يُكشف شيء على الموقع المنشور */\nif(/^(127\\.0\\.0\\.1|localhost)$/.test(location.hostname))window.__d={S,rrOf,repTxt,occIn,repRoll,fire};\nboot();\n"),
   ("const n=OB.map.size,off=S.net==='off'||navigator.onLine===false;let t='',k='';",
    "const n=OB.map.size,off=S.net==='off'||navigator.onLine===false;let t='',k='';if(!off)S.offShown=0;"),
   ("""  if(off&&n)t=`غير متصل · ${n===1?'تعديل واحد محفوظ':n===2?'تعديلان محفوظان':n+' تعديلات محفوظة'} على جوالك ويُرسل تلقائيًا`,k='off';

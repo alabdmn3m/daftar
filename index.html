@@ -711,11 +711,21 @@ const remTxt=it=>{const r=remOf(it);return r.map(m=>m===0?'عند بدئه':'ق�
 function remFromText(t){t=String(t||'');const m=t.match(/(?:ذك+ّ?ر(?:ني)?|نب+ّ?هني)\s*قبل(?:ه|ها)?\s*(?:ب\s*)?(يوم|ساع[ةه]|نص(?:ف)?\s*ساع[ةه]|ربع\s*ساع[ةه]|خمس(?:ة)?\s*(?:د|دقيق[ةه]|دقايق|دقائق)|(\d+)\s*(?:د|دقيق[ةه]|دقايق|دقائق))/);if(!m)return null;const w=m[1];const v=m[2]?+m[2]:/يوم/.test(w)?1440:/خمس/.test(w)?5:/نص/.test(w)?30:/ربع/.test(w)?15:60;return REM_OK.includes(v)?[v]:null}
 const REP_OPTS=[['','لا يتكرر'],['d','يوميًا'],['w','أسبوعيًا'],['m','شهريًا'],['y','سنويًا']],REP_RR={d:'DAILY',w:'WEEKLY',m:'MONTHLY',y:'YEARLY'};
 const repF=it=>it&&it.rep&&REP_RR[it.rep.f]?it.rep.f:'';
+/* نهاية التكرار: rep.u آخر يوم تقع فيه مرة (يُحسب من «بعد عدد مرات» لحظة إدخاله، وrep.n يُحفظ للعرض فقط) */
+const repEnd=it=>it&&it.rep&&ISO_RE.test(it.rep.u||'')?it.rep.u:null;
+function repUntilN(a,f,d,n){let k=a;for(let i=1;i<n;i++)k=repStep(k,f,d);return k}
+const repEndTxt=u=>{const g=fromIso(u);return `حتى ${g.getDate()} ${MONTHS[g.getMonth()]}${g.getFullYear()!==fromIso(today()).getFullYear()?' '+g.getFullYear():''}`};
+const rrOf=it=>{const u=repEnd(it),b='RRULE:FREQ='+REP_RR[it.rep.f];if(!u)return b;const e=new Date(`${u}T23:59:59`);return b+';UNTIL='+e.toISOString().replace(/[-:]/g,'').replace(/\.\d+Z$/,'Z')};
 const repAnchor=it=>it.type==='meeting'?it.date:it.type==='task'?(it.due||it.remindDate):(it.date||it.due||it.remindDate);
 function repStep(k,f,day){if(f==='d')return addDays(k,1);if(f==='w')return addDays(k,7);const g=fromIso(k);const dd=day||g.getDate();let y=g.getFullYear(),m=g.getMonth();if(f==='m'){m++;if(m>11){m=0;y++}}else y++;return isoOf(new Date(y,m,Math.min(dd,new Date(y,m+1,0).getDate())))}
-function repTxt(it){const f=repF(it);if(!f)return'';const a=repAnchor(it),g=a?fromIso(a):null;if(f==='d')return 'يوميًا';if(f==='w')return g?`أسبوعيًا كل ${DAYS[g.getDay()]}`:'أسبوعيًا';if(f==='m')return `شهريًا يوم ${(it.rep&&it.rep.d)||(g?g.getDate():'')}`;return g?`سنويًا ${g.getDate()} ${MONTHS[g.getMonth()]}`:'سنويًا'}
+function repTxt(it){const t0=repTxt0(it),u=repEnd(it);return t0&&u?t0+' '+repEndTxt(u):t0}
+function repTxt0(it){const f=repF(it);if(!f)return'';const a=repAnchor(it),g=a?fromIso(a):null;if(f==='d')return 'يوميًا';if(f==='w')return g?`أسبوعيًا كل ${DAYS[g.getDay()]}`:'أسبوعيًا';if(f==='m')return `شهريًا يوم ${(it.rep&&it.rep.d)||(g?g.getDate():'')}`;return g?`سنويًا ${g.getDate()} ${MONTHS[g.getMonth()]}`:'سنويًا'}
 function repSet(it,f,keep){if(!f){it.rep=null;return}const a=repAnchor(it);it.rep={f};if(f==='m'||f==='y')it.rep.d=keep&&keep.f===f&&keep.d?keep.d:(a?fromIso(a).getDate():null)}
-function occIn(it,a,b){const f=repF(it),k0=repAnchor(it);if(!k0)return[];if(!f||it.status==='done')return k0>=a&&k0<=b?[k0]:[];const out=[];let k=k0,n=0;while(k<=b&&n++<1200){if(k>=a)out.push(k);k=repStep(k,f,it.rep.d)}return out}
+/* نهاية التكرار تأتي من المحرّر أو الفهم دائمًا (لا من النسخة القديمة)، فإزالتها تُزيلها */
+function repEndApply(it,src){if(!it.rep)return;delete it.rep.u;delete it.rep.n;if(!src)return;const a=repAnchor(it);
+  /* التاريخ المحسوب يبقى كما هو بعد الإنجازات؛ لا يُعاد حسابه من الموعد الجديد فتطول السلسلة */
+  if(ISO_RE.test(src.u||'')){it.rep.u=src.u;if(src.n)it.rep.n=src.n}else if(src.n&&a){it.rep.n=src.n;it.rep.u=repUntilN(a,it.rep.f,it.rep.d,src.n)}}
+function occIn(it,a,b){const f=repF(it),k0=repAnchor(it);if(!k0)return[];if(!f||it.status==='done')return k0>=a&&k0<=b?[k0]:[];const out=[],u=repEnd(it);let k=k0,n=0;while(k<=b&&(!u||k<=u)&&n++<1200){if(k>=a)out.push(k);k=repStep(k,f,it.rep.d)}return out}
 /* يوم الدورة الحالية لمتكررة لا تاريخ لها: الشهرية يوم d من هذا الشهر، والسنوية اليوم نفسه، والباقي اليوم */
 function repBase(it,t){const f=repF(it),d=it.rep&&it.rep.d,g=fromIso(t);if(f==='m'&&d)return isoOf(new Date(g.getFullYear(),g.getMonth(),Math.min(d,new Date(g.getFullYear(),g.getMonth()+1,0).getDate())));return t}
 /* إصلاح ما سبق: متكررة بلا تاريخ تأخذ تاريخ دورتها التالية، ونسخ الإنجاز المكررة لنفس الدورة في اليوم نفسه تُدمج في واحدة */
@@ -739,6 +749,9 @@ function repRoll(id){
   /* أُنجزت دورتها اليوم: لا تُسجَّل مرة ثانية ولا تُدفع شهرًا آخر */
   {const td=today();if([...S.items.values()].some(c=>c.recOf===id&&c.status==='done'&&c.doneAt&&isoOf(new Date(c.doneAt))===td&&c.type===it.type)){const a=repAnchor(it);note(`سُجّل إنجازها اليوم، وموعدها التالي ${a?fmtDay(a):'محفوظ'}.`,5000);return null}}
   const snap=JSON.parse(JSON.stringify(it)),t=today();
+  /* آخر مرة في التكرار: إنجازها يُغلق السلسلة بدل أن يُظهر موعدًا بعد نهايتها */
+  S.rollEnded=false;{const u=repEnd(it),a0=it.type==='meeting'?it.date:(it.due||it.remindDate||repBase(it,t));if(u&&a0){let nx=repStep(a0,it.rep.f,it.rep.d),c=0;while(nx<t&&c++<1200)nx=repStep(nx,it.rep.f,it.rep.d);
+    if(nx>u){it.status='done';it.doneAt=Date.now();if(it.type==='meeting')it.mtgClosed=true;if(it.runningSince){accrue(it,Date.now());it.runningSince=null}persist(it);S.rollEnded=true;return ()=>persist(snap)}}}
   /* متكررة بلا تاريخ تبدأ منه: يُشتق يوم هذه الدورة من قاعدة التكرار، وإلا لا ينتقل إنجازها للدورة التالية فتبقى مكانها */
   if(it.type!=='meeting'&&!it.due&&!it.remindDate){const k=repBase(it,t);if(it.remindTime)it.remindDate=k;else it.due=k}
   const copy=Object.assign(JSON.parse(JSON.stringify(it)),{id:newId(),rep:null,recOf:it.id,calEventId:null,calStatus:null,calError:null,status:'done',mtgClosed:it.type==='meeting',
@@ -752,7 +765,13 @@ function repRoll(id){
   return ()=>{removeItem(copy.id);persist(snap)};
 }
 function repField(p,pre,key,attr){const f=repF(p),a=repAnchor(p);
-  return `<div class="field"><label id="${pre}-repl-${key}">التكرار</label><div class="rmc" role="group" aria-labelledby="${pre}-repl-${key}">${REP_OPTS.map(([v,l])=>`<button type="button" class="${f===v?'on':''}" data-act="${pre}-rep" data-v="${v}" ${attr} aria-pressed="${f===v}">${l}</button>`).join('')}</div>${f?`<small class="rmh">${a?esc(repTxt(p))+'. عند إنجازه يُسجَّل ويظهر موعده التالي تلقائيًا.':'حدّد موعدًا نهائيًا أو تذكيرًا ليبدأ منه التكرار.'}</small>`:''}</div>`}
+  return `<div class="field"><label id="${pre}-repl-${key}">التكرار</label><div class="rmc" role="group" aria-labelledby="${pre}-repl-${key}">${REP_OPTS.map(([v,l])=>`<button type="button" class="${f===v?'on':''}" data-act="${pre}-rep" data-v="${v}" ${attr} aria-pressed="${f===v}">${l}</button>`).join('')}</div>${f?`<small class="rmh">${a?esc(repTxt(p))+'. عند إنجازه يُسجَّل ويظهر موعده التالي تلقائيًا.':'حدّد موعدًا نهائيًا أو تذكيرًا ليبدأ منه التكرار.'}</small>`:''}</div>${f?repEndField(p,pre,key,attr):''}`}
+/* «ينتهي»: لا ينتهي / في تاريخ / بعد عدد مرات */
+function repEndField(p,pre,key,attr){const r=p.rep||{},m=r.em!==undefined?r.em:(r.n?'n':r.u?'u':''),a=repAnchor(p);
+  const btn=(v,l)=>`<button type="button" class="${m===v?'on':''}" data-act="${pre}-repend" data-v="${v}" ${attr} aria-pressed="${m===v}">${l}</button>`;
+  let x='';if(m==='u')x=`<div class="pick${r.u?'':' is-empty'}" style="margin-top:6px"><input class="in" type="date" id="${pre}-ru-${key}" data-bind="${pre}-ru" ${attr} ${a?`min="${a}"`:''} value="${esc(r.u||'')}" aria-label="آخر يوم للتكرار"></div>`;
+  else if(m==='n')x=`<div style="margin-top:6px;display:flex;align-items:center;gap:8px"><input class="in" type="number" inputmode="numeric" min="2" max="500" style="width:90px" id="${pre}-rn-${key}" data-bind="${pre}-rn" ${attr} value="${r.n||''}" aria-label="عدد المرات"><span id="${pre}-rnl-${key}" style="color:var(--muted);font-size:13px">مرة${r.u?` · آخرها ${esc(fmtDay(r.u))}`:''}</span></div>`;
+  return `<div class="field"><label id="${pre}-rel-${key}">ينتهي</label><div class="rmc" role="group" aria-labelledby="${pre}-rel-${key}">${btn('','لا ينتهي')}${btn('u','في تاريخ')}${btn('n','بعد عدد مرات')}</div>${x}</div>`}
 /* iPhone's Calendar drops 0-minute alerts synced from Google, so 'at start' is sent as 1 minute before */
 const remList=it=>it.cancelled?[]:it.type==='meeting'?[...new Set(remOf(it).map(m=>m||1))].map(m=>({method:'popup',minutes:m})):[{method:'popup',minutes:1}];
 const calReady=it=>it.type==='meeting'?!!(it.date&&it.time):!!(it.remindDate&&it.remindTime);
@@ -785,7 +804,7 @@ ${list.join('\n')}
 إذا ذُكرت جهة لعنصر بعينه فطبّقها عليه وحده.
 
 أرجع JSON فقط: مصفوفة كائنات بهذا الشكل:
-{"title":"...","type":"task|meeting","entity":"sadan|pm|personal","size":"big|small","days":["YYYY-MM-DD"],"due":"YYYY-MM-DD أو null","dueTime":"HH:MM أو null","remindDate":"YYYY-MM-DD أو null","remindTime":"HH:MM أو null","waitingFor":"اسم الشخص أو null","followUp":"YYYY-MM-DD أو null","date":"YYYY-MM-DD أو null","time":"HH:MM أو null","duration":عدد الدقائق (طوال اليوم = 1440) أو null,"location":"... أو null","canDo":true|false,"canDoKind":"تغريدة|منشور|بريد|خطاب|خطة|تقرير|أجندة اجتماع أو null","work":"call|mail|write|review|meet|visit|buy|pay أو null","rem":[دقائق أو null],"rep":"d|w|m|y إذا قال يتكرر كل يوم/أسبوع/شهر/سنة، وإلا null"}
+{"title":"...","type":"task|meeting","entity":"sadan|pm|personal","size":"big|small","days":["YYYY-MM-DD"],"due":"YYYY-MM-DD أو null","dueTime":"HH:MM أو null","remindDate":"YYYY-MM-DD أو null","remindTime":"HH:MM أو null","waitingFor":"اسم الشخص أو null","followUp":"YYYY-MM-DD أو null","date":"YYYY-MM-DD أو null","time":"HH:MM أو null","duration":عدد الدقائق (طوال اليوم = 1440) أو null,"location":"... أو null","canDo":true|false,"canDoKind":"تغريدة|منشور|بريد|خطاب|خطة|تقرير|أجندة اجتماع أو null","work":"call|mail|write|review|meet|visit|buy|pay أو null","rem":[دقائق أو null],"rep":"d|w|m|y إذا قال يتكرر كل يوم/أسبوع/شهر/سنة، وإلا null","repUntil":"YYYY-MM-DD آخر يوم للتكرار إذا قال حتى تاريخ أو حتى نهاية شهر، وإلا null","repCount":"عدد المرات إذا قال مثلًا لمدة 6 أسابيع أو 4 مرات، وإلا null"}
 
 القواعد:
 - title: صياغة قصيرة واضحة بعربية سليمة مصححة إملائيًا، تبدأ بفعل في المهام، وبلا تاريخ أو وقت.
@@ -817,7 +836,7 @@ function normalize(raw){
       time:HM_RE.test(String(o.time))?String(o.time).padStart(5,'0'):null,
       duration:Number.isFinite(+o.duration)&&+o.duration>0?Math.round(+o.duration):null,
       location:o.location&&o.location!=='null'?String(o.location).slice(0,120):'',
-      rep:['d','w','m','y'].includes(o.rep)?{f:o.rep}:undefined,
+      rep:['d','w','m','y'].includes(o.rep)?Object.assign({f:o.rep},ISO_RE.test(String(o.repUntil))&&String(o.repUntil)>=today()?{u:String(o.repUntil)}:{},Number.isFinite(+o.repCount)&&+o.repCount>=2&&+o.repCount<=500?{n:Math.round(+o.repCount)}:{}):undefined,
       rem:Array.isArray(o.rem)&&o.rem.map(Number).some(m=>REM_OK.includes(m))?o.rem.map(Number).filter(m=>REM_OK.includes(m)):undefined,
       canDo:!!o.canDo,canDoKind:KINDS.includes(o.canDoKind)?o.canDoKind:null,work:WK[o.work]?o.work:(o.work===null||o.work==='null'?null:undefined),workSrc:o.work!==undefined?'ai':undefined,
       due:ISO_RE.test(String(o.due))?String(o.due):null,dueTime:HM_RE.test(String(o.dueTime))?String(o.dueTime).padStart(5,'0'):null,
@@ -968,7 +987,7 @@ async function addPending(){
       waitingFor:p.type==='task'&&p.waitingFor?String(p.waitingFor).trim():null,followUp:p.type==='task'&&p.waitingFor?(p.followUp||addDays(today(),2)):null,topDate:null,postponed:0,
       canDo:!!p.canDo,canDoKind:p.canDoKind||null,work:p.type==='task'?(p.work!==undefined?p.work:ruleWork(p.title)):null,workSrc:p.type==='task'&&p.workSrc==='ai'&&p.work!==undefined?'ai':null,status:'open',createdAt:now+i,doneAt:null,timeByDay:{},runningSince:null,
       calEventId:null,calStatus:null,calError:null,draft:null,tz:tzNorm(pTz(p)),cat:p.type==='meeting'&&CATS[p.cat]?p.cat:null,ref:p.type==='meeting'&&p.ref?String(p.ref).trim():null};
-    repSet(it,p.rep&&p.rep.f);
+    repSet(it,p.rep&&p.rep.f);repEndApply(it,p.rep);
     added.push(it);persist(it);
   });
   if(S.followFor){const m=get(S.followFor);if(m&&m.status!=='done'&&repF(m))repRoll(m.id);else if(m&&m.status!=='done'){m.status='done';m.mtgClosed=true;m.doneAt=new Date(`${m.date}T${m.time||'12:00'}`).getTime()||Date.now();persist(m)}S.followFor=null}
@@ -985,10 +1004,10 @@ function calInput(it){
   if(it.type!=='meeting'){
     const[y,m,d]=it.remindDate.split('-').map(Number);const[h,mi]=it.remindTime.split(':').map(Number);const e=new Date(y,m-1,d,h,mi+15);
     return{summary:'تذكير: '+it.title,startTime:`${it.remindDate}T${it.remindTime}:00`,endTime:`${isoOf(e)}T${pad(e.getHours())}:${pad(e.getMinutes())}:00`,
-      description:`من دفتر المهام: ${ENT[it.entity].name}`+(it.due?`\nالموعد النهائي: ${fmtAbs(it.due)}${it.dueTime?' '+fmtClock(it.dueTime):''}`:''),...(repF(it)?{recurrenceData:['RRULE:FREQ='+REP_RR[it.rep.f]]}:{}),timeZone:tzOf(it)};
+      description:`من دفتر المهام: ${ENT[it.entity].name}`+(it.due?`\nالموعد النهائي: ${fmtAbs(it.due)}${it.dueTime?' '+fmtClock(it.dueTime):''}`:''),...(repF(it)?{recurrenceData:[rrOf(it)]}:{}),timeZone:tzOf(it)};
   }
   const o={summary:(it.cancelled?'ملغى: ':'')+(CATS[it.cat]&&it.cat!=='other'?CATS[it.cat][0]+' ':'')+it.title,startTime:`${it.date}T${it.time}:00`,endTime:endOf(it),description:`من دفتر المهام: ${ENT[it.entity].name}`+(it.ref?`\nرقم الحجز: ${it.ref}`:'')};
-  if(repF(it))o.recurrenceData=['RRULE:FREQ='+REP_RR[it.rep.f]];
+  if(repF(it))o.recurrenceData=[rrOf(it)];
   if(+it.duration>=1440){const[y,m,d]=it.date.split('-').map(Number);o.startTime=`${it.date}T00:00:00`;o.endTime=`${isoOf(new Date(y,m-1,d+1))}T00:00:00`;o.allDay=true}else o.timeZone=tzOf(it);if(it.location)o.location=it.location;return o}
 function extractId(r){
   const p=r&&r.payload;const cands=[p&&p.id,p&&p.eventId,p&&p.event&&p.event.id,p&&p.result&&p.result.id,p&&p.data&&p.data.id];
@@ -1799,7 +1818,7 @@ function renderMain(){
   }
   h+=`<section class="sec"><h2 class="sec-h">بياناتك</h2>
     ${S.imp?`<div class="confirm" style="background:var(--brand-tint)"><p style="color:var(--fg)">تستورد ${S.imp.length} عنصرًا؟ العناصر الموجودة بالرقم نفسه تُستبدل.</p><div><button class="btn primary small" data-act="imp-yes">استورد</button><button class="btn quiet small" data-act="imp-no">تراجع</button></div></div>`:''}
-    <div class="data-row">${S.dl?`<button class="btn quiet small" data-act="exp-csv">تصدير Excel</button><button class="btn quiet small" data-act="exp-json">نسخة احتياطية</button>`:''}<button class="btn quiet small" data-act="imp">استيراد نسخة</button></div><div class="data-row" style="margin-top:8px"><button class="btn quiet small" data-act="tools" aria-pressed="${!!S.toolsOn}">${S.toolsOn?'أخفِ مؤقت الوقت وأهم 3':'أظهر مؤقت الوقت وأهم 3'}</button></div>${window.DaftarCalHTML?window.DaftarCalHTML():''}${window.DaftarWidgetHTML?window.DaftarWidgetHTML():''}<p style="margin:10px 0 0;font-size:12px;color:var(--faint)">تحديث الصفحة: 26 نوفمبر 2026، 7:25 م · الإصدار v19</p></section>`;
+    <div class="data-row">${S.dl?`<button class="btn quiet small" data-act="exp-csv">تصدير Excel</button><button class="btn quiet small" data-act="exp-json">نسخة احتياطية</button>`:''}<button class="btn quiet small" data-act="imp">استيراد نسخة</button></div><div class="data-row" style="margin-top:8px"><button class="btn quiet small" data-act="tools" aria-pressed="${!!S.toolsOn}">${S.toolsOn?'أخفِ مؤقت الوقت وأهم 3':'أظهر مؤقت الوقت وأهم 3'}</button></div>${window.DaftarCalHTML?window.DaftarCalHTML():''}${window.DaftarWidgetHTML?window.DaftarWidgetHTML():''}<p style="margin:10px 0 0;font-size:12px;color:var(--faint)">تحديث الصفحة: 28 نوفمبر 2026، 6:17 م · الإصدار v20</p></section>`;
   m.innerHTML=h;
 }
 function growTitles(){document.querySelectorAll('textarea.title-in').forEach(t=>{t.style.height='auto';t.style.height=t.scrollHeight+2+'px'})}
@@ -1888,7 +1907,7 @@ async function convertType(id){
     Object.assign(it,{type:'task',size:b.size||'small',days:ds.length?ds.sort():[],remindDate:b.remindTime?(b.remindDate||ds[0]||null):null,remindTime:b.remindTime||null,due:b.due||null,dueTime:b.due?(b.dueTime||null):null,date:null,time:null,duration:null,mtgClosed:false});
     if(!it.work)it.work=ruleWork(it.title);fixRemind(it);
   }
-  if(b.rep&&b.rep.f)repSet(it,b.rep.f,b.rep);else it.rep=null;
+  if(b.rep&&b.rep.f){repSet(it,b.rep.f,b.rep);repEndApply(it,b.rep)}else it.rep=null;
   delete it.advice;it.calEventId=null;it.calStatus=null;it.calError=null;
   S.editId=null;S.eb=null;await persist(it);render();
   if(old.calEventId)await calDelete(old);
@@ -1909,7 +1928,7 @@ async function saveEditor(id){
     it.remindTime=b.remindTime||null;it.remindDate=it.remindTime?(b.remindDate||null):null;if(it.remindTime&&!it.remindDate)fixRemind(it);
     {const a0=(before.days||[]).slice().sort()[0],a1=(it.days||[]).slice().sort()[0];if(a0&&a1&&a0!==a1&&it.remindDate&&it.remindDate===before.remindDate)remFollow(it,a1,a0)}
     const wf=(b.waitingFor||'').trim();it.waitingFor=wf||null;it.followUp=wf?(b.followUp||addDays(today(),2)):null;if(wf){it.topDate=null}
-    repSet(it,b.rep&&b.rep.f,anc0===repAnchor(it)?rep0:null);const repCh=JSON.stringify(rep0)!==JSON.stringify(it.rep||null);
+    repSet(it,b.rep&&b.rep.f,anc0===repAnchor(it)?rep0:null);repEndApply(it,b.rep);const repCh=JSON.stringify(rep0)!==JSON.stringify(it.rep||null);
     if(JSON.stringify(before.days||[])!==JSON.stringify(it.days||[])||before.remindDate!==it.remindDate||before.due!==it.due){it.rvOk=t;it.pAck=it.postponed||0}
     const tz0=it.tz||null;it.tz=tzNorm(b.tz);
     const changed=tz0!==(it.tz||null)||before.remindDate!==it.remindDate||before.remindTime!==it.remindTime||before.title!==it.title||before.due!==it.due||before.dueTime!==it.dueTime||repCh;
@@ -1923,7 +1942,7 @@ async function saveEditor(id){
   else{
     const changed=(it.tz||null)!==tzNorm(b.tz)||it.date!==(b.date||null)||it.time!==(b.time||null)||+it.duration!==+b.duration||it.location!==b.location||!!b._remChanged||(it.ref||null)!==((b.ref||'').trim()||null)||it.title!==S.items.get(id).title||JSON.stringify(b.rep&&b.rep.f||'')!==JSON.stringify(repF(it));
     it.tz=tzNorm(b.tz);it.date=b.date||null;it.time=b.time||null;it.duration=+b.duration||60;it.location=(b.location||'').trim();it.cat=CATS[b.cat]?b.cat:null;it.ref=(b.ref||'').trim()||null;
-    repSet(it,b.rep&&b.rep.f,anc0===it.date?rep0:null);const repCh=JSON.stringify(rep0)!==JSON.stringify(it.rep||null);
+    repSet(it,b.rep&&b.rep.f,anc0===it.date?rep0:null);repEndApply(it,b.rep);const repCh=JSON.stringify(rep0)!==JSON.stringify(it.rep||null);
     if(repCh&&it.calEventId){const old=Object.assign({},it);it.calEventId=null;it.calStatus=null;S.editId=null;S.eb=null;await persist(it);await calDelete(old);if(it.date&&it.time&&it.importedFrom!=='iphone')calCreate(id);return}
     S.editId=null;S.eb=null;await persist(it);
     if(it.date&&it.time){if(it.calEventId){if(changed)calUpdate(id)}else if(it.importedFrom!=='iphone')calCreate(id)}
@@ -1949,7 +1968,8 @@ document.addEventListener('click',async e=>{
     case 'p-type':if(P){P.type=v;if(v==='meeting'){P.days=[];fixMeeting(P)}renderReview()}break;
     case 'p-ent':if(P){P.entity=v;renderReview()}break;
     case 'p-size':if(P){P.size=v;renderReview()}break;
-    case 'p-rep':case 'e-rep':{const T=act[0]==='p'?P:S.eb;if(!T)break;if(act[0]==='e'){const te=document.getElementById('e-title-'+id);if(te)T.title=te.value}T.rep=v?{f:v}:null;act[0]==='p'?renderReview():render();break}
+    case 'p-rep':case 'e-rep':{const T=act[0]==='p'?P:S.eb;if(!T)break;if(act[0]==='e'){const te=document.getElementById('e-title-'+id);if(te)T.title=te.value}const o=T.rep||{};T.rep=v?Object.assign({f:v},o.u?{u:o.u}:{},o.n?{n:o.n}:{},o.em!==undefined?{em:o.em}:{}):null;if(T.rep&&T.rep.n){const a=repAnchor(T);if(a)T.rep.u=repUntilN(a,T.rep.f,T.rep.d,T.rep.n)}act[0]==='p'?renderReview():render();break}
+    case 'p-repend':case 'e-repend':{const T=act[0]==='p'?P:S.eb;if(!T||!T.rep)break;if(act[0]==='e'){const te=document.getElementById('e-title-'+id);if(te)T.title=te.value}T.rep=Object.assign({f:T.rep.f},T.rep.d?{d:T.rep.d}:{},{em:v});act[0]==='p'?renderReview():render();break}
     case 'p-rem':case 'e-rem':{const T=act[0]==='p'?P:S.eb;if(!T)break;if(act[0]==='e'){const te=document.getElementById('e-title-'+id);if(te)T.title=te.value}const m=+v;let r=remOf(T);r=r.includes(m)?r.filter(x=>x!==m):[...r,m];if(!r.length){note('اترك تذكيرًا واحدًا على الأقل.',2500);break}T.rem=r;act[0]==='p'?renderReview():render();break}
     case 'p-day':if(P){P.days=P.days.includes(v)?P.days.filter(d=>d!==v):[...P.days,v].sort();renderReview()}break;
     case 'p-del':S.pending=S.pending.filter(p=>p._k!==k);if(!S.pending.length)S.phase='idle';renderReview();break;
@@ -1987,7 +2007,7 @@ case 'cal-mlist':S.calMList=!calMListOn();try{localStorage.setItem('daftar-cal-m
     case 'mtg-follow':{const it=get(id);if(!it)break;S.followFor=id;const ta=document.getElementById('entry');const ad=adviceFor(it);ta.value=(ad.act==='follow'&&ad.text)?ad.text:`متابعة «${it.title}»: `;window.scrollTo({top:0,behavior:'smooth'});setTimeout(()=>{ta.focus();ta.setSelectionRange(ta.value.length,ta.value.length)},300);note('اكتب المتابعة وأرسلها، ويُغلق الموعد عند إضافتها.',5000);break}
     case 'mtg-cxl':{const it=get(id);if(!it)break;S.editId=null;S.eb=null;S.confirm=null;it.status='done';it.cancelled=true;it.mtgClosed=true;it.doneAt=null;await persist(it);if(it.calEventId)calUpdate(id);note('أُلغي الموعد، وبقي في التقويم مشطوبًا بلا تنبيهات.',6000,()=>fire('mtg-uncxl',id));break}
     case 'mtg-uncxl':{const it=get(id);if(!it)break;it.status='open';it.cancelled=false;it.mtgClosed=false;it.doneAt=null;it._wasCx=true;await persist(it);if(it.calEventId)await calUpdate(id);const c=get(id);if(c&&c._wasCx){delete c._wasCx;persist(c)}note('أُعيد الموعد وتنبيهاته.',3000);break}
-    case 'mtg-close':{const it=get(id);if(!it)break;if(repF(it)){if(S.followFor===id)S.followFor=null;const u=repRoll(id);if(u)note('أُغلق، وظهر موعده التالي.',5000,u);else render();break}it.status='done';it.mtgClosed=true;it.doneAt=new Date(`${it.date}T${it.time||'12:00'}`).getTime()||Date.now();if(S.followFor===id)S.followFor=null;
+    case 'mtg-close':{const it=get(id);if(!it)break;if(repF(it)){if(S.followFor===id)S.followFor=null;const u=repRoll(id);if(u)note(S.rollEnded?'أُغلق، وكانت آخر مرة في تكراره.':'أُغلق، وظهر موعده التالي.',5000,u);else render();break}it.status='done';it.mtgClosed=true;it.doneAt=new Date(`${it.date}T${it.time||'12:00'}`).getTime()||Date.now();if(S.followFor===id)S.followFor=null;
       const undo=()=>{const c=get(id);if(!c)return;c.status='open';c.doneAt=null;c.mtgClosed=false;persist(c)};persist(it);note('أُغلق الموعد.',5000,undo);break}
     case 'carry-top':{const tt=today();const cur=[...S.items.values()].filter(i=>i.status!=='done'&&isTop(i)).length;
       const y=[...S.items.values()].filter(i=>i.status!=='done'&&i.type!=='meeting'&&!isWaiting(i)&&!isTop(i)&&i.topDate&&i.topDate<tt&&i.topDate>=addDays(tt,-3)).sort((a,b)=>a.topDate<b.topDate?1:-1).slice(0,Math.max(0,3-cur));
@@ -2047,7 +2067,7 @@ case 'cal-mlist':S.calMList=!calMListOn();try{localStorage.setItem('daftar-cal-m
     case 'imp-no':S.imp=null;render();break;
     case 'pause':anchored(id,()=>pauseTimer(id));break;
     case 'done':{if(!b.dataset.go){const row=document.getElementById('row-'+id);if(row&&!row.classList.contains('leaving')){row.classList.add('leaving');setTimeout(()=>fire('done',id),430);break}}
-      if(repF(get(id)||{})){if(S.editId===id){S.editId=null;S.eb=null}const u=repRoll(id);if(u)note('أُنجز وسُجّل، وظهر موعده التالي.',6000,u);else render();break}
+      if(repF(get(id)||{})){if(S.editId===id){S.editId=null;S.eb=null}const u=repRoll(id);if(u)note(S.rollEnded?'أُنجز، وكانت آخر مرة في تكراره.':'أُنجز وسُجّل، وظهر موعده التالي.',6000,u);else render();break}
       const it=get(id);if(!it)break;const wasTop=isTop(it);setTimeout(()=>{if(wasTop){const t=today();const tops=[...S.items.values()].filter(i=>i.topDate===t);if(tops.length>=3&&tops.every(i=>i.status==='done'))celebrate('أنهيت أهم 3 اليوم. يوم منتج!')}},50);if(it.runningSince)accrue(it,Date.now());it.status='done';it.doneAt=Date.now();if(S.editId===id){S.editId=null;S.eb=null}
       const undo=()=>{const c=get(id);if(!c)return;c.status='open';c.doneAt=null;persist(c).then(()=>{if(c.type==='task'&&!c.calEventId&&calReady(c)&&remindFuture(c))calCreate(id)})};
       if(it.type==='task'&&it.calEventId&&remindFuture(it)){const old=Object.assign({},it);it.calEventId=null;it.calStatus=null;it.calError=null;persist(it);calDelete(old)}else persist(it);
@@ -2085,6 +2105,11 @@ document.addEventListener('input',e=>{
   if(bind==='idea-in'){S.ideaIn=S.ideaIn||{};S.ideaIn[el.dataset.id]=val;return}
   if(bind==='ip-t'){const x=S.ideaP&&S.ideaP.list.find(y=>y.k===el.dataset.k);if(x){x.t=val;const g=catGuess(val);if(g&&g!==x.c&&x.c==='other'){x.c=g}}return}
   if(bind.startsWith('vac-')){const T=el.dataset.k==='ed'?S.vacEd:S.vacP;if(T){const f=bind.slice(4);if(f==='title')T.title=val;else if(f==='from'){T.date=val||null;if(T.date&&(!T.endDate||T.endDate<T.date))T.endDate=T.date}else if(f==='to')T.endDate=val||null;else if(f==='link')T.link=val;else if(f==='tz')T.tz=tzNorm(val)||'';const pk=el.closest('.pick');if(pk)pk.classList.toggle('is-empty',!val)}return}
+  if(/^[pe]-r[un]$/.test(bind)){const T=bind[0]==='p'?S.pending.find(p=>p._k===el.dataset.k):S.eb;if(!T||!T.rep)return;
+    if(bind[3]==='u'){T.rep.u=ISO_RE.test(val)?val:undefined;delete T.rep.n;const pk=el.closest('.pick');if(pk)pk.classList.toggle('is-empty',!val)}
+    else{const n=Math.min(500,Math.max(0,parseInt(val,10)||0));if(n>=2){T.rep.n=n;const a=repAnchor(T);T.rep.u=a?repUntilN(a,T.rep.f,T.rep.d,n):undefined}else{delete T.rep.n;delete T.rep.u}
+      const lb=document.getElementById(el.id.replace('-rn-','-rnl-'));if(lb)lb.textContent='مرة'+(T.rep.u?' · آخرها '+fmtDay(T.rep.u):'')}
+    return}
   const pre=bind.slice(0,1),f=bind.slice(2),key=FIELD[f];if(!key)return;if(['date','time','dur','due','duet'].includes(f))S.clashAsk=null;
   const T=pre==='p'?S.pending.find(p=>p._k===el.dataset.k):S.eb;if(!T)return;
   if(f==='title'&&el.tagName==='TEXTAREA'){el.style.height='auto';el.style.height=el.scrollHeight+2+'px'}
@@ -2260,6 +2285,8 @@ window.DaftarWidgetFeed=function(){
   }
   return { v: 1, days };
 };
+/* للاختبار المحلي فقط: لا يُكشف شيء على الموقع المنشور */
+if(/^(127\.0\.0\.1|localhost)$/.test(location.hostname))window.__d={S,rrOf,repTxt,occIn,repRoll,fire};
 boot();
 })();
 </script>
